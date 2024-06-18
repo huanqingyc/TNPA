@@ -9,6 +9,43 @@ import time
 具体实现为：先挑出R的Region后，在这个Region中搜索R-1的Region，先生成内部的分割方案，再在其基础上向外拓展，生成剩余部分的subg分割方案。
 '''
 
+def print_region(G,R,N):
+    regions = get_Regions(G,R,N) 
+    n = 0
+    # print(len(regions))
+    for region in regions:
+        # print(len(region[0].edges()))
+        n += len(list(region.graph))
+        print(list(region.graph),list(region.graph.edges()))
+        if region.subg:
+            print('subregions:')
+            for subg in region.subregions:
+                # print(list(subg))
+                print(list(subg),list(subg.edges()),len(subg))
+            if region.intersec:
+                print('intersections:')
+                for intersec in region.intersections:
+                    # print(list(intersec))
+                    print(list(intersec),list(intersec.edges()),len(intersec))
+        print()
+    print(n)
+
+def print_region_diction(G,R,N):
+    regions_dict = get_Regions_diction(G,R,N) 
+    # print(len(regions))
+    for r in range(3,R+1):
+        n = 0
+        print('R='+str(r))
+        for region in regions_dict[r]:
+            n += len(list(region.graph))
+            print(list(region.graph)) #,list(region.graph.edges())
+            if region.subg:
+                print('subregions:')
+                for part in region.subregions:
+                    print(list(part))
+            print()
+        print(n)
+
 def cut(G,nodes = False):
     G_loop = remove_empty_nodes(G,nodes)
     if nodes != False:
