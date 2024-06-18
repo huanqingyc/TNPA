@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import networkx as nx
 
 '''
-对应1.0版。
+对应Graph的1.0版。
+调整MCMC为SIR特供版
 '''
 
 def read_data(filename):
@@ -71,50 +72,26 @@ def read_data(filename):
                 average[2] = data
     return [np.array(marginal_all),np.array(average)]
 
-def mcmc_step(marginal, n, etype, epar, G):
-    next = np.zeros_like(marginal)
-    d = len(set(etype))
-    for i in range(n):
-        if marginal[i,0] == 1:
-            sumi = sum(marginal[list(G[i]),1])
-            if np.random.random() < (epar[0] * sumi):
-                next[i,1] = 1
-            else:
-                next[i,0] = 1
+def MCMC(para): 
+    [repeats,epar,n,t_max,seed,spt,init_state,neighs] = para
+    marginal_sum = np.zeros([t_max+1,n,3])
+    np.random.seed(seed)
+    marginal_sum[0] = init_state*repeats
 
-        elif marginal[i,1] == 1:
-            if np.random.random() < epar[1]:
-                if etype == 'SIS':
-                    next[i,0] = 1
-                else: 
-                    next[i,2] = 1
-            else:
-                next[i,1] = 1
-
-        elif d == 3 and marginal[i,2] == 1:
-            if etype == 'SIRS' and np.random.random() < epar[2]:
-                next[i,0] = 1
-            else:
-                next[i,2] = 1
-    return next
-
-def MCMC(c1,para,G): 
-    [repeats,etype,epar,n,t_max,i,tau,initstate] = para
-    marginal_sum = np.zeros([t_max+1,n,len(set(etype))])
-
-    for repeat in range(repeats):
-        np.random.seed(repeat + i * repeats)
-        marginal = initstate.copy()
-        marginal_all = np.zeros([t_max+1,n,len(set(etype))])
-        marginal_all[0] += marginal
-
-        for t in range(t_max):
-            for __ in range(int(1/tau)):
-                marginal = mcmc_step(marginal, n, etype, epar, G)
-            marginal_all[t+1] += marginal
-        marginal_sum += marginal_all
-    c1.send(marginal_sum)
-    return 0
+    for _ in range(repeats):
+        marginal = init_state.copy()
+        for t in range(1,t_max+1):
+            for __ in range(spt):
+                rand = np.random.rand(n)
+                infect_prob = epar[0] * np.sum(marginal[neighs, 1], axis=1)
+                infect = (marginal[:, 0] == 1) & (rand < infect_prob)
+                recover = (marginal[:, 1] == 1) & (rand < epar[1])
+                marginal[infect,0] = 0
+                marginal[infect,1] = 1
+                marginal[recover,1] = 0
+                marginal[recover,2] = 1
+            marginal_sum[t] += marginal
+    return marginal_sum
 
 class Epidemic:
     '''
@@ -141,11 +118,10 @@ class Epidemic:
     def sys_init(self,info,init_type = 'single'):
         self.marginal[:,0] += 1
         if init_type == 'single':
-            inis = info
             self.p = False
-            self.marginal[inis,0] = 0
-            self.marginal[inis,1] = 1
-            self.name += '_single_ini=' + str(inis) + '_'
+            self.marginal[info,0] = 0
+            self.marginal[info,1] = 1
+            self.name += '_single_ini=' + str(info) + '_'
         self.marginal_all.append(self.marginal.copy())
         self.edges = np.array(self.G.edges)
 
@@ -207,11 +183,35 @@ class Epidemic:
         self.K = np.zeros((self.n))
         self.k = np.zeros((self.n))
 
-    def MCMC_init(self, repeats, mp_num = 10): # 默认开十个线程
+    def MCMC(self, init, t, repeats, mp_num = 10): # 默认开十个线程
         self.algorithm = 'MCMC'
         self.algorithm_label = '_repeats=' + str(repeats)
-        self.repeats = repeats
-        self.mp_num = mp_num
+        # 替代sys_init 和update_to
+        self.t = t 
+        self.name += '_single_ini=' + str(init) + '_'
+        self.name += self.algorithm + self.algorithm_label
+        self.name += '_T=' + str(t) + '_tau=' + str(self.tau)
+
+        self.marginal_all = np.zeros([t+1,self.n,self.d])
+
+        init_state = np.zeros([self.n,3])
+        init_state[:,0] = 1
+        init_state[init,0] = 0
+        init_state[init,1] = 1
+        single_repeat = repeats//mp_num
+        spt = int(1/self.tau) # steps per unit time
+        neighs = [list(self.G.neighbors(i)) for i in range(self.n)]
+
+        with mp.Pool(mp_num) as pool:
+            arg_list = [
+                (single_repeat,self.epar,self.n,t,seed,spt,init_state,neighs)
+                    for seed in range(mp_num)
+                ]
+            results = pool.map(MCMC,arg_list)
+        for result in results:
+            self.marginal_all += result
+        self.marginal_all /= repeats
+        # print(self.marginal_all)
 
     def update_to(self,t):
         self.t = t
@@ -219,17 +219,7 @@ class Epidemic:
         self.name += '_T=' + str(t) + '_tau=' + str(self.tau)
 
         if self.algorithm == 'MCMC':
-            self.marginal_all = np.zeros([t+1,self.n,self.d])
-            c1,c2 = mp.Pipe()
-            epar = self.epar
-            process_list = [mp.Process(target = MCMC, args = (c1,[self.repeats//self.mp_num,self.etype,epar,self.n,t,i,self.tau,self.marginal],self.G)) for i in range(self.mp_num)]
-            [mc.start() for mc in process_list] 
-
-            for _ in range(self.mp_num):
-                self.marginal_all += c2.recv()
-            self.marginal_all /= self.repeats
-
-            [p.join() for p in process_list]
+            print("MCMC don't need this function, try Epidemic.MCMC")
 
         else:
             pt = 0
