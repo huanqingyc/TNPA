@@ -178,7 +178,7 @@ if __name__ == '__main__':
     G,gname= graph('rrg',[200,3,1])
 
     # G = nx.random_tree(200,seed = 1)
-    gname = 'random_tree_seed=1_n=200'
+    # gname = 'random_tree_seed=1_n=200'
 
     n = 10
     k = 3
@@ -212,7 +212,7 @@ if __name__ == '__main__':
         # t = time.time()
         s_MC.MCMC(ini, t_max, repeats= 1000000, mp_num=20)
         # print(time.time()-t)
-        # s_MC.save_data(precision)
+        s_MC.save_data(precision)
 
         s = Epidemic(G,gname,etype,epar,tau)
         s.sys_init(ini)
@@ -243,4 +243,4 @@ if __name__ == '__main__':
     else:
         print_region_diction(G,9,9)
 
-# nohup python -u TNPA.v1.3.py >/dev/null 2>&1 &
+# nohup python -u TNPA.py >/dev/null 2>&1 &

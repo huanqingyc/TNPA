@@ -83,8 +83,8 @@ def read_data(filename):
                 average[2] = data
     return [np.array(marginal_all),np.array(average)]
 
-def MCMC(c1,para): 
-    [repeats,epar,n,t_max,seed,spt,init_state,neighs] = para
+def MCMC(para): 
+    [repeats,epar,n,t_max,seed,spt,init_state,adjacency_matrix] = para
     marginal_sum = np.zeros([t_max+1,n,3])
     np.random.seed(seed)
     marginal_sum[0] = init_state*repeats
@@ -94,23 +94,22 @@ def MCMC(c1,para):
         for t in range(1,t_max+1):
             for __ in range(spt):
                 rand = np.random.rand(n)
-                infect = []
-                recover = []
-                for i in range(n):
-                    if marginal[i,0] == 1 and rand[i] < epar[0]*sum(marginal[neighs[i],1]):
-                        infect.append(i)
-                    elif marginal[i,1] == 1 and rand[i] <epar[1]:
-                        recover.append(i)
-                # infect_prob = epar[0] * np.sum(marginal[neighs, np.newaxis, 1], axis=1)
-                # infect = (marginal[:, 0] == 1) & (rand < infect_prob)
-                # recover = (marginal[:, 1] == 1) & (rand < epar[1])
+                # infect = []
+                # recover = []
+                # for i in range(n):
+                #     if marginal[i,0] == 1 and rand[i] < epar[0]*sum(marginal[neighs[i],1]):
+                #         infect.append(i)
+                #     elif marginal[i,1] == 1 and rand[i] <epar[1]:
+                #         recover.append(i)
+                infect_prob = epar[0] * adjacency_matrix@marginal[:,1]
+                infect = (marginal[:, 0] == 1) & (rand < infect_prob)
+                recover = (marginal[:, 1] == 1) & (rand < epar[1])
                 marginal[infect,0] = 0
                 marginal[infect,1] = 1
                 marginal[recover,1] = 0
                 marginal[recover,2] = 1
             marginal_sum[t] += marginal
-    c1.send(marginal_sum)
-    return 0
+    return marginal_sum
 
 class Epidemic:
     '''
@@ -217,27 +216,27 @@ class Epidemic:
         init_state[init,0] = 0
         init_state[init,1] = 1
 
-        neighs = [list(self.G.neighbors(i)) for i in range(self.n)]
+        adjacency_matrix = nx.to_numpy_array(self.G)
         single_repeat = repeats//mp_num
         spt = int(1/self.tau) # steps per unit time
 
-        c1,c2 = mp.Pipe()
-        process_list = [mp.Process(target = MCMC, args = (c1,[single_repeat,self.epar,self.n,t,seed,spt,init_state,neighs])) for seed in range(mp_num)]
-        [mc.start() for mc in process_list] 
-        for _ in range(mp_num):
-            self.marginal_all += c2.recv()
-        self.marginal_all /= self.repeats
-        [p.join() for p in process_list]
+        # c1,c2 = mp.Pipe()
+        # process_list = [mp.Process(target = MCMC, args = (c1,[single_repeat,self.epar,self.n,t,seed,spt,init_state,adjacency_matrix])) for seed in range(mp_num)]
+        # [mc.start() for mc in process_list] 
+        # for _ in range(mp_num):
+        #     self.marginal_all += c2.recv()
+        # self.marginal_all /= self.repeats
+        # [p.join() for p in process_list]
 
-        # with mp.Pool(mp_num) as pool:
-        #     arg_list = [
-        #         [single_repeat,self.epar,self.n,t,seed,spt,init_state,neighs]
-        #             for seed in range(mp_num)
-        #         ]
-        #     results = pool.map(MCMC,arg_list)
-        # for result in results:
-        #     self.marginal_all += result
-        # self.marginal_all /= repeats
+        with mp.Pool(mp_num) as pool:
+            arg_list = [
+                [single_repeat,self.epar,self.n,t,seed,spt,init_state,adjacency_matrix]
+                    for seed in range(mp_num)
+                ]
+            results = pool.map(MCMC,arg_list)
+        for result in results:
+            self.marginal_all += result
+        self.marginal_all /= repeats
         # print(self.marginal_all)
 
     def update_to(self,t):
