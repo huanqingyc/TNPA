@@ -30,21 +30,25 @@ def print_region(G,R,N):
         print()
     print(n)
 
-def print_region_diction(G,R,N):
+def print_region_diction(G,R,N,edges:bool,macro_G:bool = False):
     regions_dict = get_Regions_diction(G,R,N) 
     # print(len(regions))
     for r in range(3,R+1):
-        n = 0
+        all_nodes = set()
         print('R='+str(r))
         for region in regions_dict[r]:
-            n += len(list(region.graph))
+            all_nodes.update(list(region.graph))
             print(list(region.graph)) #,list(region.graph.edges())
+            if edges:
+                print(list(region.graph.edges()))
             if region.subg:
                 print('subregions:')
                 for part in region.subregions:
                     print(list(part))
+                if macro_G:
+                    print(list(region.macro_g.edges()))
             print()
-        print(n)
+        print(len(all_nodes))
 
 def cut(G,nodes = False):
     G_loop = remove_empty_nodes(G,nodes)
@@ -154,26 +158,15 @@ def get_Regions(G,R:int,N:int):
     G = cut(G)
     G_remain = deepcopy(G)
     Regions = []
-    # Regions = dict() # 字典的key为3到R,对应相应R取值的Region变量
-    # for r in range(3,R):
-    #     Regions[r] = []
     edges = list(G_remain.edges())
     for e in edges:
         # print(e)
         if G_remain.has_edge(e[0],e[1]):
-            # print(e)
-            # t = time.time()
             g = Region_generator(G_remain,e,R)
-            # print('Region',time.time()-t)
-            # print(len(g))
             G_remain.remove_edges_from(list(g.edges())) # 不管怎样，g的所有边都可以从G_remain上移除了
-            # print(list(g))
             if len(g) > 2:# 在一条边的基础上找到了其他区域
-                # t = time.time()
                 region = region_graph(g,R,N)
                 Regions.append(region)
-                # Regions = region.in_dict(Regions)
-                # print('subRegion',time.time()-t)
             if len(G_remain)>0:
                 G_remain = cut(G_remain,list(g))
     return Regions
@@ -224,7 +217,7 @@ def subregion_generator(g,g_full,e,R:int,N:int):
         for node in set(subg).intersection(set_g):
             if len(subg[node])<len(g[node]) or len(subg[node]) ==1: # 还有可用的连接,或是在边界处
                 boundary.append(node)
-        # print(boundary)
+        # if subg.has_edge(12,10) or subg.has_edge(42,36):
         edge_new = False
         full = False
 
@@ -244,7 +237,7 @@ def subregion_generator(g,g_full,e,R:int,N:int):
                             # 找一个有意义的路径
                             while len(paths_out)>0:
                                 path_out = paths_out.pop()
-                                if len(set(path_out).intersection(set_g)) == 2:#就只有开头结尾两个点，没意义
+                                if len(paths_out)>0 and len(set(path_out).intersection(set_g)) == 2:#就只有开头结尾两个点，没意义
                                     path_out = paths_out.pop()
                                 else:
                                     flag = True
@@ -275,10 +268,11 @@ def subregion_generator(g,g_full,e,R:int,N:int):
             # 查漏补缺，此时可能出现现有的点之间有连边，但是没必要再过一遍search path了
             set_subg = set(subg)
             for node in list(subg):
-                neighs_inside = set(g_left[node]).intersection(set_subg)
-                for neigh in neighs_inside:
-                    subg.add_edge(node,neigh)
-                    g_left.remove_edge(node,neigh)
+                if node in list(g_left):
+                    neighs_inside = set(g_left[node]).intersection(set_subg)
+                    for neigh in neighs_inside:
+                        subg.add_edge(node,neigh)
+                        g_left.remove_edge(node,neigh)
             break
 
 
@@ -291,7 +285,7 @@ def subregion_generator(g,g_full,e,R:int,N:int):
             nodes.update([n1,n2])
     subg = remove_empty_nodes(subg,list(nodes))
 
-    if len(subg)>0:
+    if len(subg)>0: # 其实是废话，一定会>0的
         g_left = remove_empty_nodes(g_left,list(subg))
 
     return [subg,g_left]
@@ -362,35 +356,37 @@ class region_graph:
         # 相对于R-1新添加部分的subg
         subgs = []
         # 保留连通区域
-        g_remain = remove_empty_nodes(g_left)
-        while len(g_remain)>self.n:
-            # 找初始边
-            degree = dict(nx.degree(g_remain))
-            min_degree_node = [node for node, deg in degree.items() if deg == min(degree.values())][0]
-            if degree[min_degree_node] <= 2:
-                neigh = list(g_remain[min_degree_node])
-                neigh_degree = dict(nx.degree(g_remain,neigh))
-                min_degree_neigh = [node for node, deg in neigh_degree.items() if deg == min(neigh_degree.values())][0]
-                e = (min_degree_node,min_degree_neigh)
-            else:
-                min_weight = 2*len(list(self.graph))
-                e = None
-                for edge in list(g_remain.edges()):
-                    [n1,n2] = edge
-                    weight = degree[n1]+degree[n2]
-                    if min_weight>weight:
-                        e = edge
-            # print(e,degree[e[0]]+degree[e[1]])
-            # 从这条边开始生成subg
-            temp = subregion_generator(g_remain,self.graph,e,self.R,self.n)
-            subg,g_remain = temp
-
-            if len(subg)>0:
-                subgs.append(subg)
-                if len(g_remain)<=self.n:
-                    break
+        g_remain = remove_empty_nodes(g_left)# R新增的区域
         if len(g_remain)>0:
-            subgs.append(g_remain)
+            while len(g_remain)>self.n or len(list(nx.connected_components(g_remain)))>1:# 很大或是多块都要再生成
+                # 找初始边
+                degree = dict(nx.degree(g_remain))
+                min_degree_node = [node for node, deg in degree.items() if deg == min(degree.values())][0]
+                if degree[min_degree_node] <= 2:
+                    neigh = list(g_remain[min_degree_node])
+                    neigh_degree = dict(nx.degree(g_remain,neigh))
+                    min_degree_neigh = [node for node, deg in neigh_degree.items() if deg == min(neigh_degree.values())][0]
+                    e = (min_degree_node,min_degree_neigh)
+                else:
+                    min_weight = 2*len(list(self.graph))
+                    e = None
+                    for edge in list(g_remain.edges()):
+                        [n1,n2] = edge
+                        weight = degree[n1]+degree[n2]
+                        if min_weight>weight:
+                            e = edge
+                # print(e,degree[e[0]]+degree[e[1]])
+                # 从这条边开始生成subg
+                temp = subregion_generator(g_remain,self.graph,e,self.R,self.n)
+                subg,g_remain = temp
+
+                if len(subg)>0:
+                    subgs.append(subg)
+                    if len(g_remain)<=self.n:
+                        break
+            if len(g_remain)>0:
+                subgs.append(g_remain)
+
 
         #联通区域断开
         # g_remain = list(nx.connected_components(remove_empty_nodes(g_left)))
@@ -485,40 +481,40 @@ class region_graph:
 
 # about graph
 
-def graph(G_type,paremater = []):
+def graph(G_type,parameter = []):
     '''
     G_type
     '''
     gname = G_type
     
     if G_type == 'rrg':
-        [n,c,seed] = paremater
+        [n,c,seed] = parameter
         g = nx.random_regular_graph(c,n,seed=seed)
         gname += '_c=' + str(c) + '_seed=' + str(seed)
     elif G_type == 'erg': # 也即泊松度分布
-        [n,c,seed] = paremater
+        [n,c,seed] = parameter
         g = nx.erdos_renyi_graph(n,c/n,seed=seed)
         gname += '_c=' + str(c) + '_seed=' + str(seed)
     elif G_type == 'tree':
-        [n,seed] = paremater
+        [n,seed] = parameter
         g = nx.random_tree(n,seed = seed)
     elif G_type == 'powerlaw': # 无标度网络
-        [n,m,seed] = paremater
+        [n,m,seed] = parameter
         g = nx.barabasi_albert_graph(n,m,seed = seed)
         gname += '_m=' + str(m) + '_seed=' + str(seed)
     elif G_type == 'smallworld': # 小世界网络
-        [n,c,p,seed] = paremater
+        [n,c,p,seed] = parameter
         g = nx.watts_strogatz_graph(n,c,p,seed = seed)
         gname += '_c=' + str(c) + '_p=' + str(p) + '_seed=' + str(seed)
     elif G_type == 'macrotree':
         g = macrotree()
         n = len(list(g))
-    elif G_type == 'qubics':
-        num = paremater[0]
+    elif G_type == 'squares':
+        num = parameter[0]
         g = qubic_graph(num)
         n = len(list(g))
     elif G_type == 'elist':
-        [gname,elist] = paremater
+        [gname,elist] = parameter
         g = nx.empty_graph()
         g.add_edges_from(elist)
         n = len(list(g))
@@ -527,7 +523,7 @@ def graph(G_type,paremater = []):
         g = nx.karate_club_graph()
         n = len(list(g))
     elif G_type == 'bcspwr':
-        [num] = paremater
+        [num] = parameter
         gname += str(num)
         g = nx.empty_graph()
         with open('bcspwr0'+str(num)+'.txt','r') as f:
@@ -542,6 +538,55 @@ def graph(G_type,paremater = []):
                 else:
                     break
         n = len(g)
+    elif G_type == 'random_tree':
+        [n,seed] = parameter
+        g = nx.random_tree(n,seed=seed)
+        gname += '_seed=' + str(seed)
+    elif G_type == 'USA':
+        gname = 'contiguous_usa'
+        g = nx.empty_graph()
+        with open('contiguous_usa.txt','r') as f:
+            while True:
+                e_str = f.readline()[:-1]
+                if e_str :
+                    n1,n2= e_str.split(sep=',')
+                    n1 = int(n1)-1 # 存储的是矩阵，从1开始，有error
+                    n2 = int(n2)-1
+                    if n1 != n2:
+                        g.add_edge(n1,n2)
+                else:
+                    break
+        n = len(g)
+
+    elif G_type == 'triangle_tree':
+        [layer,seed,tri_num] = parameter
+        np.random.seed(seed)
+        g = nx.empty_graph()
+        g.add_edges_from([(0,1),(0,2),(0,3)])
+        surface = [1,2,3]
+        for _ in range(1,layer):
+            present = len(g)
+            for node in surface:
+                l = len(g)    
+                g.add_edge(node,l)
+                g.add_edge(node,l+1)
+            surface = list(range(present,len(g)))
+
+        replace_list = list(np.random.choice(present, tri_num, replace = False))
+        present = len(g)
+        for node in replace_list:
+            neighs = list(g[node])
+            g.remove_edge(node,neighs[1])
+            g.remove_edge(node,neighs[2])
+            g.add_edges_from([(node,present),(node,present+1),(present,present+1),(present,neighs[1]),(present+1,neighs[2])])
+            present += 2
+        n = len(g)
+
+    elif G_type == 'lattice':
+        [n] = parameter
+        g = lattice(n)
+        n = len(list(g))
+
     gname += '_n=' + str(n)
 
     return g,gname
@@ -566,6 +611,12 @@ def macrotree():
     G = nx.empty_graph(0)
     G.add_edges_from(elist)
     return G
+
+def lattice(n):
+    g = nx.empty_graph()
+    g.add_edges_from([(cols+n*row,cols+n*row+1) for cols in range(n-1) for row in range(n)])
+    g.add_edges_from([(cols+n*row,cols+n*row+n) for cols in range(n) for row in range(n-1)])
+    return g
 
 def add_clique(G,n_clique,size,seed,stepped=False):
     """在一张图上生成局部的clique
@@ -657,13 +708,19 @@ def safe_inv(v):
         else:
             inv[i] = 0.
     return inv
-    
+   
 if __name__ == '__main__':
-    G,gname= graph('rrg',[200,3,1])
-    # G,gname= graph('macrotree')
-
+    # G,gname= graph('rrg',[200,3,1])
+    G,gname= graph('USA')
+    # G,gname = graph('random_tree',[150,35])
+    # n = 12
+    # k = 3
+    # seed_clique = 48
+    # G = add_clique(G,n,k,seed_clique)
+    # G = cut(G)
+    # print(len(G))
     # # t = time.time()
-    # regions = get_Regions(G,7,7)
+    # regions = get_Regions(G,3,3)
     # # print(time.time()-t)
 
     # print(len(regions))
@@ -676,18 +733,21 @@ if __name__ == '__main__':
     #         # print(part.edges())
     #     print()
 
-    R = 7
-    N = 7
-    t = time.time()
+    R = 4
+    N = 4
+    # t = time.time()
     region_dict = get_Regions_diction(G,R,N)
-    print(time.time()-t)
+    # print(time.time()-t)
 
     for r in range(3,R+1):
         print('R='+str(r))
         for region in region_dict[r]:
             print(list(region.graph))
+            # print(list(region.graph.edges()))
             if region.subg:
                 print('subregions:')
                 for part in region.subregions:
                     print(list(part))
             print()
+    
+

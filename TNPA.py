@@ -175,23 +175,38 @@ if __name__ == '__main__':
     if False:
         Interaction_module()
 
-    G,gname= graph('rrg',[200,3,1])
+    # n = 0
+    # G,gname= graph('club')
+    G,gname= graph('USA')
+    # t_max = 50
 
-    # G = nx.random_tree(200,seed = 1)
-    # gname = 'random_tree_seed=1_n=200'
+    # G,gname= graph('rrg',[200,3,1])
+    # G,gname= graph('rrg',[1000,3,1])
+    # n = 20
+    # k = 3
+    # seed = 1
+    # t_max = 200
 
-    n = 10
-    k = 3
-    seed = 1
-
-    G = add_clique(G,n,k,seed)
-    gname = str(n) + '*' + str(k) + 'cliqued_' + gname
-
-    t_max = 200
-    # tau = 1.
-    tau = 0.1
+    # G,gname = graph('triangle_tree',[6,1,50])
+    # G,gname = graph('squares',[20])
+    # G,gname = graph('lattice',[10])
     
-    # # rho = 0.1
+    # G,gname = graph('random_tree',[150,35])
+    t_max = 200
+
+    # n = 12
+    # k = 3
+    # seed_clique = 48
+
+    # G = add_clique(G,n,k,seed_clique)
+    # gname = str(n) + '*' + str(k) + 'cliqued_seed=' + str(seed_clique) + gname
+
+    tau = 0.1
+
+    # t_max = 2
+    # tau = 1.
+    
+    # rho = 0.1
     rho = 0.05
     lamda = 0.1
 
@@ -201,6 +216,7 @@ if __name__ == '__main__':
     ini = [0]
     
     # elist = [(0,1),(0,2),(0,3),(4,1),(4,2),(5,1),(5,3),(6,2),(6,3)]
+    # elist = [(0,1),(0,2),(1,2),(0,3),(4,0),(3,4)]
     # G,gname = graph('elist',['test',elist])
 
     # elist = [(0,1),(0,2),(1,3),(2,3),(4,2),(5,3),(5,4),(5,6),(6,0)]
@@ -208,10 +224,11 @@ if __name__ == '__main__':
 
     # 模型参数
     if True:
+        set_environment_variables()
         s_MC = Epidemic(G,gname,etype,epar,tau)
-        # t = time.time()
+        t = time.time()
         s_MC.MCMC(ini, t_max, repeats= 1000000, mp_num=20)
-        # print(time.time()-t)
+        print(time.time()-t)
         s_MC.save_data(precision)
 
         s = Epidemic(G,gname,etype,epar,tau)
@@ -219,28 +236,39 @@ if __name__ == '__main__':
         s.PA_init()
         s.update_to(t_max)
         s.save_data(precision)
-        s.save_error(s_MC.marginal_all,precision)
 
         s = Epidemic(G,gname,etype,epar,tau)
         s.sys_init(ini)
         s.DMP_init()
         s.update_to(t_max)
         s.save_data(precision)
-        s.save_error(s_MC.marginal_all,precision)
 
-        R = 9
-        N = 9
-        region_dict = get_Regions_diction(G,R,N)
-        for r in range(3,R+1):
-            label = '_R=' + str(r)  + '_N=' + str(N)
-            s = Epidemic(G,gname,etype,epar,tau)
-            s.sys_init(ini)
-            s.TNPA_init(region_dict[r],label)
-            s.update_to(t_max)
-            s.save_data(precision)
-            s.save_error(s_MC.marginal_all,precision)
+        # R = 4
+        # N = 4
+        # region_dict = get_Regions_diction(G,R,N)
+        # for r in range(3,R+1):
+        #     print(r)
+        #     label = '_R' + str(r)  + 'N' + str(N)
+        #     s = Epidemic(G,gname,etype,epar,tau)
+        #     s.sys_init(ini)
+        #     s.TNPA_init(region_dict[r],label)
+        #     s.update_to(t_max)
+        #     s.save_data(precision)
+
+        for N in range(4,12,2):
+            R = [4]
+            # N = 9
+            region_dict = get_Regions_diction(G,max(R),N)
+            for r in R:
+                # print(r)
+                label = '_R' + str(r)  + 'N' + str(N)
+                s = Epidemic(G,gname,etype,epar,tau)
+                s.sys_init(ini)
+                s.TNPA_init(region_dict[r],label)
+                s.update_to(t_max)
+                s.save_data(precision)
         
     else:
-        print_region_diction(G,9,9)
+        print_region_diction(G,4,4,False,True)
 
 # nohup python -u TNPA.py >/dev/null 2>&1 &

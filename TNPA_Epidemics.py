@@ -1,25 +1,16 @@
-import numpy as np
 from TNPA_Graph import *
-from copy import deepcopy
 import multiprocessing as mp
 import matplotlib.pyplot as plt
-import networkx as nx
-import matplotlib.pyplot as plt
+import os
 
+def set_environment_variables():
+    threads = '4'
+    os.environ["MKL_NUM_THREADS"] = threads
+    os.environ["NUMEXPR_NUM_THREADS"] = threads
+    os.environ["OMP_NUM_THREADS"] = threads
 '''
-对应Graph的1.0版。
 调整MCMC为SIR特供版
 '''
-
-def plot(t_max,data,label):
-    plt.plot(range(t_max+1), data  , label = label)
-
-def read_all(epar,graph,time):
-    MC = read_data(epar+graph+'_MCMC_'+time)
-    PA = read_data(epar+graph+'_PA_'+time)
-    DMP = read_data(epar+graph+'_DMP_'+time)
-    TNPA = [read_data(epar+graph+'_TNPA_R='+str(r)+'_N='+str(R)+time) for r in range(3,R+1)]
-    return [MC,PA,DMP,TNPA]
 
 def read_data(filename):
     marginal_all = []
@@ -88,22 +79,19 @@ def MCMC(para):
     marginal_sum = np.zeros([t_max+1,n,3])
     np.random.seed(seed)
     marginal_sum[0] = init_state*repeats
-
+    infect_multiplier = epar[0] * adjacency_matrix
+    # print(infect_multiplier[0,138])
     for _ in range(repeats):
         marginal = init_state.copy()
         for t in range(1,t_max+1):
-            for __ in range(spt):
-                rand = np.random.rand(n)
-                # infect = []
-                # recover = []
-                # for i in range(n):
-                #     if marginal[i,0] == 1 and rand[i] < epar[0]*sum(marginal[neighs[i],1]):
-                #         infect.append(i)
-                #     elif marginal[i,1] == 1 and rand[i] <epar[1]:
-                #         recover.append(i)
-                infect_prob = epar[0] * adjacency_matrix@marginal[:,1]
-                infect = (marginal[:, 0] == 1) & (rand < infect_prob)
-                recover = (marginal[:, 1] == 1) & (rand < epar[1])
+            rand = np.random.rand(spt,n)
+            for s in range(spt):
+                current_rand = rand[s,:]
+                infect_prob = infect_multiplier @ marginal[:,1]
+                # print(infect_prob[1])
+                infect = (marginal[:, 0] == 1) & (current_rand < infect_prob)
+                recover = (marginal[:, 1] == 1) & (current_rand < epar[1])
+                # print(infect[1])
                 marginal[infect,0] = 0
                 marginal[infect,1] = 1
                 marginal[recover,1] = 0
@@ -118,6 +106,7 @@ class Epidemic:
     def __init__(self,g,gtype,etype,epar,tau,label = False):
         self.G = deepcopy(g)
         self.tau = tau
+        self.spt = int(1/tau) # steps per unit time
         self.name = etype + '_' + str(epar) +'_'+ gtype
         if label != False:
             self.name += '_' + str(label)
@@ -139,12 +128,11 @@ class Epidemic:
             self.p = False
             self.marginal[info,0] = 0
             self.marginal[info,1] = 1
-            self.name += '_single_ini=' + str(info) + '_'
+            # self.name += '_single_ini=' + str(info) + '_'
         self.marginal_all.append(self.marginal.copy())
-        self.edges = np.array(self.G.edges)
+        self.edges = list(self.G.edges())
 
     def TNPA_init(self, partition, label, eps = 1e-7):
-        self.PA_init()
         self.algorithm = 'TNPA'
         self.algorithm_label += label
 
@@ -171,24 +159,36 @@ class Epidemic:
             neighs_of_region.append(neighs)
         
         self.neighs_of_region = neighs_of_region # 正序的指标含义[区块序号，点，点的邻居]
-        [self.edges,self.PA_nodes] = self.get_PA_part() # 去除TN内边的其他边
+        [self.edges_PA,self.edges_TN,self.PA_nodes] = self.get_PA_part() # 去除TN内边的其他边
+        self.IS = np.zeros((self.n,self.n))
+        self.SS = np.zeros((self.n,self.n))
+        for [i,j] in self.edges_PA + [e for es in self.edges_TN for e in es]:
+            self.IS[i,j] = self.marginal[i,1]*self.marginal[j,0]  # IS(i,j) = P(I_i,S_j)
+            self.IS[j,i] = self.marginal[j,1]*self.marginal[i,0]
+            self.SS[i,j] = self.marginal[i,0]*self.marginal[j,0]
+            self.SS[j,i] = self.marginal[i,0]*self.marginal[j,0]
         self.num_tn = len(partition)
         
     def get_PA_part(self):
         leftg = self.G.copy()
-        out_g = self.G.copy()
+        out_nodes = set(self.G)
+        edges_TN = []
         for Region_graph in self.Regions:
             leftg.remove_edges_from(Region_graph.edges())
-            out_g.remove_nodes_from(list(Region_graph))
-        edges = np.array(leftg.edges)
-        nodes = list(out_g)
-        return [edges,nodes]
+            boundary = [n for n in list(Region_graph) if len(Region_graph[n])<len(self.G[n])]
+            edges_TN.append([e for e in Region_graph.edges() if e[0] in boundary or e[1] in boundary])
+            out_nodes.difference_update(set(Region_graph))
+        edges_PA = list(leftg.edges)
+        nodes = list(out_nodes)
+        
+        return [edges_PA,edges_TN,nodes]
 
     def PA_init(self): 
         self.algorithm = 'PA'
         self.IS = np.zeros((self.n,self.n))
         self.SS = np.zeros((self.n,self.n))
-        for [i,j] in self.edges:
+        for e in self.edges:
+            [i,j] = e
             self.IS[i,j] = self.marginal[i,1]*self.marginal[j,0]  # IS(i,j) = P(I_i,S_j)
             self.IS[j,i] = self.marginal[j,1]*self.marginal[i,0]
             self.SS[i,j] = self.marginal[i,0]*self.marginal[j,0]
@@ -203,11 +203,10 @@ class Epidemic:
 
     def MCMC(self, init, t, repeats, mp_num = 10): # 默认开十个线程
         self.algorithm = 'MCMC'
-        self.algorithm_label = '_repeats=' + str(repeats)
         # 替代sys_init 和update_to
         self.t = t 
-        self.name += '_single_ini=' + str(init) + '_'
-        self.name += self.algorithm + self.algorithm_label
+        # self.name += '_single_ini=' + str(init) + '_'
+        self.name += '_' + self.algorithm
         self.name += '_T=' + str(t) + '_tau=' + str(self.tau)
 
         self.marginal_all = np.zeros([t+1,self.n,self.d])
@@ -216,32 +215,26 @@ class Epidemic:
         init_state[init,0] = 0
         init_state[init,1] = 1
 
-        adjacency_matrix = nx.to_numpy_array(self.G)
+        adjacency_matrix = nx.to_numpy_array(self.G,list(range(self.n)))
+        adjacency_matrix[adjacency_matrix!=0] = 1
+        # print(adjacency_matrix)
         single_repeat = repeats//mp_num
-        spt = int(1/self.tau) # steps per unit time
-
-        # c1,c2 = mp.Pipe()
-        # process_list = [mp.Process(target = MCMC, args = (c1,[single_repeat,self.epar,self.n,t,seed,spt,init_state,adjacency_matrix])) for seed in range(mp_num)]
-        # [mc.start() for mc in process_list] 
-        # for _ in range(mp_num):
-        #     self.marginal_all += c2.recv()
-        # self.marginal_all /= self.repeats
-        # [p.join() for p in process_list]
 
         with mp.Pool(mp_num) as pool:
             arg_list = [
-                [single_repeat,self.epar,self.n,t,seed,spt,init_state,adjacency_matrix]
+                [single_repeat,self.epar,self.n,t,seed,self.spt,init_state,adjacency_matrix]
                     for seed in range(mp_num)
                 ]
             results = pool.map(MCMC,arg_list)
         for result in results:
             self.marginal_all += result
         self.marginal_all /= repeats
+        # print(self.marginal_all[1,138,:])
         # print(self.marginal_all)
 
     def update_to(self,t):
         self.t = t
-        self.name += self.algorithm + self.algorithm_label
+        self.name += '_' + self.algorithm + self.algorithm_label
         self.name += '_T=' + str(t) + '_tau=' + str(self.tau)
 
         if self.algorithm == 'MCMC':
@@ -250,7 +243,7 @@ class Epidemic:
         else:
             pt = 0
             for _ in range(t):
-                for __ in range(int(1/self.tau)):
+                for __ in range(self.spt):
                     self.update(pt)
                     pt += self.tau
                 self.marginal_all.append(self.marginal.copy())
@@ -289,8 +282,11 @@ class Epidemic:
     def update_PA(self):
         new_IS = self.IS.copy()
         new_SS = self.SS.copy()
-
-        for [a,b] in self.edges:
+        if self.algorithm == 'TNPA':
+            edges = self.edges_PA
+        else:
+            edges = self.edges
+        for [a,b] in edges:
 
             [sa,sb] = [0,0]
             if self.marginal[a,0] != 0 :
@@ -309,15 +305,21 @@ class Epidemic:
         
         self.update_marginal(self.IS)
         self.IS = new_IS
-        # print(self.IS[:,1])
         self.SS = new_SS
 
     def contractTN(self): 
         for i in range(self.num_tn):
             nodes = list(self.Regions[i])
+            edges = self.edges_TN[i] # 需要在这个Region中缩并得到的概率
             l = len(nodes)
             for j in range(l):
-                self.marginal[nodes[j]] = self.TN[i].marginal(j)                            
+                self.marginal[nodes[j]] = self.TN[i].marginal(j)
+            for e in edges:
+                pp = self.TN[i].pair_marginal(e[0],e[1])
+                self.IS[e[0],e[1]] = pp[1,0] # 现在的code其实会把TN中没连接的两点也添加一个联合概率，但现在是三角形全连接无所谓，
+                self.IS[e[1],e[0]] = pp[0,1]
+                self.SS[e[0],e[1]] = pp[0,0]
+                self.SS[e[1],e[0]] = pp[0,0]
         # print(self.IS[:,1])
     
     def update_DMP(self,t):
@@ -492,6 +494,14 @@ class Small_region:
     def marginal(self,i):
         marginal = np.sum(self.T,axis = tuple([dim for dim in range(self.n) if (dim != i)]))
         return marginal
+    
+    def pair_marginal(self,n1,n2):
+        i = self.nodes.index(n1)
+        j = self.nodes.index(n2)
+        pp = np.sum(self.T,axis = tuple([dim for dim in range(self.n) if (dim != i and dim != j)]))
+        if j<i:
+            pp = np.transpose(pp)
+        return pp
 
 class Large_region:
     def __init__(self,region:region_graph,etype,epar,init,d,eps):
@@ -534,6 +544,14 @@ class Large_region:
                 pp = subg.marginal(n1)
                 break
         return pp
+    
+    def pair_marginal(self,n1,n2):
+        for subg in (self.subregions):
+            if subg.G.has_edge(n1,n2):
+                pp = subg.pair_marginal(n1,n2)
+                break
+        return pp
+
 
 class subregion: 
     def __init__(self,G,boundaries,etype,epar,init,d,eps):
@@ -734,6 +752,14 @@ class subregion:
         marginal = np.sum(self.T,axis = tuple([dim for dim in range(self.n) if dim != i]))
         return marginal
 
+    def pair_marginal(self,n1,n2):
+        i = self.nid[n1]
+        j = self.nid[n2]
+        pp = np.sum(self.T,axis = tuple([dim for dim in range(self.n) if (dim != i and dim != j)]))
+        if j<i:
+            pp = np.transpose(pp)
+        return pp
+    
 
 # if __name__ == '__main__':
 #     G,gname= graph('rrg',[20,3,1])
