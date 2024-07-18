@@ -2,10 +2,7 @@ from TNPA_Epidemics import *
 import argparse
 
 '''
-本版本主要实现的内容：
-包体现在具有独立的版本号了
-为了保持一致性构建了新的subg划分方案
-
+对代码进行了初步调整，将各算法分离出来，增强可读性
 '''
 
 def Interaction_module(): # unfinished
@@ -224,23 +221,22 @@ if __name__ == '__main__':
 
     # 模型参数
     if True:
-        set_environment_variables()
-        s_MC = Epidemic(G,gname,etype,epar,tau)
-        t = time.time()
-        s_MC.MCMC(ini, t_max, repeats= 1000000, mp_num=20)
-        print(time.time()-t)
-        s_MC.save_data(precision)
-
-        s = Epidemic(G,gname,etype,epar,tau)
-        s.sys_init(ini)
-        s.PA_init()
-        s.update_to(t_max)
+        s = MCMC_mp(G,gname,etype,epar,tau,ini)
+        s.evolution(t_max,repeats= 1000000,mp_num=20)
         s.save_data(precision)
 
-        s = Epidemic(G,gname,etype,epar,tau)
-        s.sys_init(ini)
-        s.DMP_init()
-        s.update_to(t_max)
+        s = PA(G,gname,etype,epar,tau,ini)
+        s.evolution(t_max)
+        s.save_data(precision)
+
+        s = DMP(G,gname,etype,epar,tau,ini)
+        s.evolution(t_max)
+        s.save_data(precision)
+
+        region_dict = get_Regions_diction(G,3,7)
+        label = '_R3N7'
+        s = TNPA(G,gname,etype,epar,tau,ini,region_dict[3],label)
+        s.evolution(t_max)
         s.save_data(precision)
 
         # R = 4
@@ -249,23 +245,18 @@ if __name__ == '__main__':
         # for r in range(3,R+1):
         #     print(r)
         #     label = '_R' + str(r)  + 'N' + str(N)
-        #     s = Epidemic(G,gname,etype,epar,tau)
-        #     s.sys_init(ini)
-        #     s.TNPA_init(region_dict[r],label)
-        #     s.update_to(t_max)
+        #     s = TNPA(G,gname,etype,epar,tau,ini,region_dict[r],label)
+        #     s.evolution(t_max)
         #     s.save_data(precision)
 
         for N in range(4,12,2):
             R = [4]
-            # N = 9
             region_dict = get_Regions_diction(G,max(R),N)
             for r in R:
                 # print(r)
                 label = '_R' + str(r)  + 'N' + str(N)
-                s = Epidemic(G,gname,etype,epar,tau)
-                s.sys_init(ini)
-                s.TNPA_init(region_dict[r],label)
-                s.update_to(t_max)
+                s = TNPA(G,gname,etype,epar,tau,ini,region_dict[r],label)
+                s.evolution(t_max)
                 s.save_data(precision)
         
     else:
