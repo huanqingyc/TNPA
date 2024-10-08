@@ -213,10 +213,10 @@ def subregion_generator(g,g_full,e,R:int,N:int):
     # 先找到新的subregion
     
     while edge_new:
-        boundary = []
-        for node in set(subg).intersection(set_g):
-            if len(subg[node])<len(g[node]) or len(subg[node]) ==1: # 还有可用的连接,或是在边界处
-                boundary.append(node)
+        boundary = [node for node in set(subg).intersection(set_g) if len(subg[node])<len(g[node]) or len(subg[node]) ==1]
+        # for node in set(subg).intersection(set_g):
+        #     if len(subg[node])<len(g[node]) or len(subg[node]) ==1: # 还有可用的连接,或是在边界处
+        #         boundary.append(node)
         # if subg.has_edge(12,10) or subg.has_edge(42,36):
         edge_new = False
         full = False
@@ -238,7 +238,7 @@ def subregion_generator(g,g_full,e,R:int,N:int):
                             while len(paths_out)>0:
                                 path_out = paths_out.pop()
                                 if len(paths_out)>0 and len(set(path_out).intersection(set_g)) == 2:#就只有开头结尾两个点，没意义
-                                    path_out = paths_out.pop()
+                                    continue
                                 else:
                                     flag = True
                                     break
@@ -299,10 +299,7 @@ class region_graph:
         if self.subg:
             self.divide_region()
             self.n_sg = len(self.subregions)
-            self.get_macro_region()
-        else:
-            self.macro_g = nx.Graph()
-            self.macro_g.add_node(0)
+        else: # 下面可以改一下
             regions_inside = []
             if self.R>3:
                 subg_inside = []
@@ -453,21 +450,6 @@ class region_graph:
         # subgs = reform_subg
         
         self.subregions = subgs + subg_inside
-
-    def get_macro_region(self):
-        self.macro_g = nx.empty_graph()
-        l = self.n_sg
-        self.macro_g.add_nodes_from([i for i in range(l)])
-        self.boundaries = [[None for _ in range(l)] for _ in range(l)]
-        for i in range(l):
-            g1 = set(self.subregions[i])
-            for j in range(i):
-                g2 = set(self.subregions[j])
-                boundary = g1.intersection(g2)
-                if len(boundary)>0:
-                    self.macro_g.add_edges_from([(i,j)])
-                    self.boundaries[i][j] = list(boundary)
-                    self.boundaries[j][i] = list(boundary)
 
     def update_dict(self,region_diction):
         # 还没改好，争取一劳永逸

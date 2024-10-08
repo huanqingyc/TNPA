@@ -145,47 +145,6 @@ class DMP(Epidemic):
             # print( self.l,self.z[a],np.prod(self.H[:,a]))
             new_H[a, b] += -( self.r + self.l) * self.H[a,b] + self.r  + self.l*self.z[a]*np.prod(self.H[:,a])/self.H[b,a]
             new_H[b, a] += -( self.r + self.l) * self.H[b,a] + self.r  + self.l*self.z[b]*np.prod(self.H[:,b])/self.H[a,b]
-
-        for i in self.nodes:
-            s = self.z[i]*np.prod(self.H[:,i]) # x下一步的P(S)，但是上一步的还有用，先不更新
-            self.k[i] += -self.r*self.k[i] + self.r*(s-self.marginal[i,0])/self.tau
-            self.K[i] += self.tau*self.k[i]
-            self.marginal[i,2] = (1-self.z[i])*(1-np.exp(-self.r*self.pt/self.tau)) - self.K[i] 
-            self.marginal[i,0] = s
-            self.marginal[i,1] = 1.-self.marginal[i,0]-self.marginal[i,2]
-        self.H = new_H
-
-class mDMP(Epidemic):
-    def __init__(self, g, gtype, etype, epar, tau, init):
-        super().__init__(g, gtype, etype, epar, tau, init)
-        self.marginal_all.append(self.marginal.copy())
-        self.edges = list(self.G.edges())
-
-        self.algorithm = 'mDMP'
-        self.H = np.ones((self.n,self.n))
-        self.z = self.marginal[:,0].copy()
-        self.K = np.zeros((self.n))
-        self.k = np.zeros((self.n))
-
-    def evolution(self, t):
-        self.t = t
-        self.name += '_' + self.algorithm + self.algorithm_label
-        self.name += '_T=' + str(t) + '_tau=' + str(self.tau)
-        self.pt = 0
-        for _ in range(t):
-            for __ in range(self.spt):
-                self.step()
-                self.pt += self.tau
-            self.marginal_all.append(self.marginal.copy())
-        self.marginal_all = np.array(self.marginal_all)
-
-    def step(self):
-        new_H = self.H.copy()
-
-        for [a,b] in self.edges:
-            # print( self.l,self.z[a],np.prod(self.H[:,a]))
-            new_H[a, b] += -( self.r + self.l) * self.H[a,b] + self.r  + self.l*self.z[a]*np.prod(self.H[:,a])/self.H[b,a]
-            new_H[b, a] += -( self.r + self.l) * self.H[b,a] + self.r  + self.l*self.z[b]*np.prod(self.H[:,b])/self.H[a,b]
         self.H = new_H
 
         for i in self.nodes:
@@ -240,13 +199,9 @@ class PA(Epidemic):
             new_IS[b, a] += (-( self.r + self.l * (1+sa) )* self.IS[b, a] + db)
                 
         for i in self.nodes:
-            delta = np.zeros([self.d])
-            deltai = self.l * sum(self.IS[:,i]) # delta with symbol x will add on the marginal of x 
-            delta[:2] += [-deltai, deltai]
-
+            deltai = self.l * sum(self.IS[:,i])
             deltar = self.r * self.marginal[i,1]
-            delta += [0, - deltar, deltar]
-            self.marginal[i] += delta
+            self.marginal[i] += np.array([-deltai, deltai- deltar, deltar])
 
         self.IS = new_IS
         self.SS = new_SS
@@ -262,10 +217,7 @@ class TNPA(PA):
         self.TN = []
         for region in partition:
             self.Regions.append(region.graph)
-            if region.subg:
-                self.TN.append(Large_region(region,self.etype,self.epar,self.marginal,self.d))
-            else:
-                self.TN.append(Small_region(region,self.etype,self.epar,self.marginal[list(region.graph)],self.d))
+            self.TN.append(Region(region,self.etype,self.epar,self.marginal[list(region.graph)],self.d))
 
         neighs_of_region = []
 
@@ -331,7 +283,7 @@ class TNPA(PA):
             l = len(nodes)
             for j in range(l):
                 self.marginal[nodes[j]] = self.TN[i].marginal(j)
-            for e in edges:
+            for e in edges: # 其实很多边是不需要的，可以删掉
                 [a,b] = e
                 pp = self.TN[i].pair_marginal(a,b)
                 self.IS[a,b] = pp[1,0] # 现在的code其实会把TN中没连接的两点也添加一个联合概率，但现在是三角形全连接无所谓，
@@ -407,9 +359,9 @@ def read_data(filename):
                 average[2] = data
     return [np.array(marginal_all),np.array(average)]
 
-class Small_region:
+class Region:
     eps = 1e-7
-    def __init__(self,G,etype,epar,init,d):
+    def __init__(self,G,epar,init,d):
         self.G = G.graph
         self.nodes = list(self.G)
         self.n = len(self.nodes)
@@ -421,9 +373,9 @@ class Small_region:
         for node in range(1,self.n):
             t = np.outer(t,init[node]).reshape(-1)
         self.T = t.reshape([self.d for _ in range(self.n)])
-        self.get_operators(etype)
+        self.get_operators()
 
-    def get_operators(self,etype): #后面写成左乘了，所以算符的后指标是初态
+    def get_operators(self): #后面写成左乘了，所以算符的后指标是初态
         infc = np.eye(self.d**2).reshape(self.d,self.d,self.d,self.d)
         infc[1,1,0,1] += self.l
         infc[0,1,0,1] -= self.l
@@ -480,262 +432,6 @@ class Small_region:
             pp = np.transpose(pp)
         return pp
 
-class Large_region:
-    def __init__(self,region:region_graph,etype,epar,init,d):
-        self.nodes = list(region.graph)
-        self.subgnum = region.n_sg
-        self.subregions = []
-        self.macro_g = region.macro_g
-        # print(list(region.macro_g),list(region.macro_g.edges()))
-        self.gid = []
-        # print(region.boundaries)
-        for i in range(0,self.subgnum):
-            self.subregions.append(subregion(region.subregions[i],region.boundaries[i],etype,epar,init[list(region.subregions[i])],d))
-            self.gid.append([])
-            for node in list(region.subregions[i]):
-                self.gid[-1].append(self.nodes.index(node))
-
-    def update(self,msgin):
-        o_in = [[None for _ in range(self.subgnum)] for _ in range(self.subgnum)]
-        o_out = [[None for _ in range(self.subgnum)] for _ in range(self.subgnum)]
-        
-        for i in range(len(self.subregions)):
-            subg = self.subregions[i]
-            o_out[i] = subg.o_out()
-
-        # 由于list不能按维度索引的问题，只能手动做转置
-        for i in range(self.subgnum):
-            for j in range(self.subgnum):
-                o_in[i][j] = o_out[j][i]
-                
-        for i in range(len(self.subregions)):
-            subg = self.subregions[i]
-            subg.update(msgin[self.gid[i]],o_in[i])
-        
-    def marginal(self,i):
-        n1 = self.nodes[i]
-        for subg in (self.subregions):
-            # print(list(subg.G),n1,n2)
-            # print(n1 in subg.G and n2 in subg.G)
-            if n1 in subg.G:
-                pp = subg.marginal(n1)
-                break
-        return pp
-    
-    def pair_marginal(self,n1,n2):
-        for subg in (self.subregions):
-            if subg.G.has_edge(n1,n2):
-                pp = subg.pair_marginal(n1,n2)
-                break
-        return pp
-
-class subregion: 
-    eps = 1e-7
-    def __init__(self,G,boundaries,etype,epar,init,d):
-        self.G = G
-        self.n = len(G)
-        self.l = epar[0]
-        if len(etype)>2:
-            self.r = epar[1]
-        self.d = d
-        self.getnid()
-
-        self.boundaries = boundaries
-        # print(list(G),boundaries)
-        self.get_boundary_neigh()
-        # print(list(G),init)
-        t = init[0]
-        for node in range(1,self.n):
-            t = np.outer(t,init[node]).reshape(-1)
-        self.T = t.reshape([self.d for _ in range(self.n)])
-        self.get_operators(etype)
-        # print(self.boundary_operator)
-
-    def getnid(self):
-        self.nid = {}
-        nodes = list(self.G)
-        for i in range(self.n):
-            self.nid[nodes[i]] = i
-
-    def get_boundary_neigh(self):
-        neighs = []
-        # print(list(self.G))
-        for boundary in self.boundaries:
-            if boundary != None: 
-                neigh = set()
-                for node in boundary:
-                    neigh.update(list(self.G[node]))
-                neigh = neigh.difference(set(boundary)) # 去掉边界本身，避免重复
-                neighs.append(list(neigh))
-            else:
-                neighs.append(None)
-        self.neighs_of_boundaries = neighs
-
-    def get_operators(self,etype): #后面写成左乘了，所以算符的后指标是初态
-        infc = np.eye(self.d**2).reshape(self.d,self.d,self.d,self.d)
-        infc[1,1,0,1] += self.l
-        infc[0,1,0,1] -= self.l
-        infc[1,1,1,0] += self.l
-        infc[1,0,1,0] -= self.l
-        self.infc = infc.reshape(self.d*self.d,self.d*self.d)
-        # print(self.infc)
-        getinfc = np.zeros([self.d,self.d])
-        getinfc[1,0] += self.l
-        getinfc[0,0] -= self.l
-        self.getinfc = getinfc
-
-        local = np.eye(self.d)
-        if len(etype)>2:
-            local[2,1] += self.r
-            local[1,1] -= self.r
-
-        self.local = local
-
-        self.get_boundary_operator()
-
-        # print(local)
-        
-    def get_boundary_operator(self): # 相当于先给出约化的时间演化算符，只需要把条件概率缩并上去即可
-        # print(list(self.G))
-        self.boundary_operator = []
-        for i in range(len(self.boundaries)):
-            boundary = self.boundaries[i]
-            if boundary != None:
-                lb = len(boundary)
-                neighs = self.neighs_of_boundaries[i]
-                ln = len(neighs)
-                identity = np.eye(self.d**(ln+lb)).reshape([self.d for _ in range(2*(ln+lb))])
-                # identity2 = np.eye(self.d**(ln+lb-2)).reshape([self.d for _ in range(2*(ln+lb-2))])
-                o = identity[None,None,:] # 扩张的两个维度是公用的
-                for j in range(ln):
-                    neigh = neighs[j]
-                    o = np.swapaxes(o,lb+j+2,1)
-                    neigh_in_boundary = set(self.G[neigh]).intersection(set(boundary))
-                    for node in neigh_in_boundary:
-                        idn = boundary.index(node)
-                        o = np.swapaxes(o,idn+2,0)
-                        # id_temp = identity2.reshape(o[0,0].shape)
-                        o = np.tensordot(self.infc.reshape([self.d for _ in range(4)]),o,axes=((-2,-1),(0,1)))
-                        o = np.swapaxes(o,idn+2,0)
-                    o = np.swapaxes(o,lb+j+2,1)
-
-                for j in range(lb):
-                    n1 = boundary[j]
-                    o = np.swapaxes(o,0,j+2)
-                    for k in range(j+1,lb):
-                        n2 = boundary[k]
-                        if nx.has_path(self.G,n1,n2):
-                            o = np.swapaxes(o,1,k+2)
-                            o = np.tensordot(self.infc.reshape([self.d for _ in range(4)]),o,axes=((-2,-1),(0,1)))
-                            o = np.swapaxes(o,1,k+2)
-                    o = np.swapaxes(o,0,j+2)
-                    
-                o = np.squeeze(o) - identity
-                o = np.sum(o.reshape([self.d**lb,self.d**ln,self.d**lb,self.d**ln]),axis=1)
-                # print(boundary,neighs,o.reshape(self.d**lb,self.d**(lb+ln)))
-                self.boundary_operator.append(o)
-            else:
-                self.boundary_operator.append(None)
-
-    def o_out(self): # 此处把除以marginal得到条件概率和缩并约化时间演化算符得到相应marginal(也就是另一subregion的相应区域)的时间演化算符
-        o_out = []
-        # print(list(self.G))
-        for i in range(len(self.boundaries)):
-            boundary = self.boundaries[i]
-            if boundary!= None:
-                lb = len(boundary)
-                neigh = self.neighs_of_boundaries[i]
-                ln = len(neigh)
-                # print(self.T)
-                t = self.T
-
-                # 把boundary和neigh放到最前,其他求和
-                for _ in range(lb+ln):
-                    t = t[None,:]
-                for j in range(lb):
-                    t = np.swapaxes(t,j,lb+ln+self.nid[boundary[j]])
-                    # print(t.shape)
-                for j in range(ln):
-                    t = np.swapaxes(t,j+lb,lb+ln+self.nid[neigh[j]])
-                    # print(t.shape)
-
-                t = np.sum(t.reshape([self.d**lb,self.d**ln,-1]),axis = -1)
-                marginal = np.sum(t,axis = -1)
-                # print(list(self.G),boundary,neigh)
-                # print(t,self.boundary_operator[i])
-                w = np.einsum('ai,bai,a->ba',t,self.boundary_operator[i],safe_inv(marginal))
-                # print(w)
-                o_out.append(w + np.eye(self.d**lb))
-                # print(o_out[-1])
-            else:
-                o_out.append(None)                                                            
-        return o_out
-
-    def update(self,msgin,o_in):
-        # print(list(self.G))
-
-        t = self.T
-        for edge in list(self.G.edges()): #内部的感染
-            [a,b] = edge
-            i = self.nid[a]
-            j = self.nid[b]
-            if j<i:
-                [i,j] = [j,i]
-            t = np.swapaxes(np.swapaxes(t,i,0),j,1)
-            t = t.reshape(self.d*self.d,-1)
-            t = self.infc @ t
-            t = t.reshape([self.d for _ in range(self.n)])
-            t = np.swapaxes(np.swapaxes(t,j,1),i,0)
-        # print(t)
-
-        for i in range(len(self.boundaries)): # 相邻区域的感染
-            boundary = self.boundaries[i]
-            if boundary != None:
-                l = len(boundary)
-                o = o_in[i]
-                for _ in range(l):
-                    t = t[None,:]
-                for j in range(l):
-                    # print(j,l+self.nid[boundary[j]]-1)
-                    t = np.swapaxes(t,j,l+self.nid[boundary[j]])
-                    # print(t.shape)
-                shape = list(t.shape)
-                # print(shape,l)
-                t = t.reshape([-1]+shape[l:])
-                # print(boundary,o)
-                # print(t.shape)
-                # print(list(self.G),boundary,o.shape,t.shape)
-                t = np.tensordot(o,t,axes=([-1],[0]))
-                t = t.reshape(shape)
-                for j in range(l):
-                    t = np.swapaxes(t,j,l+self.nid[boundary[j]])
-                t = t.reshape([self.d for _ in range(self.n)])
-
-        # print(t)
-        for i in range(self.n): # 外部的感染和各点的康复/恢复易染
-            t = np.swapaxes(t,i,0)
-            t = t.reshape(self.d,-1)
-            t = self.local @ t
-            if abs(msgin[i])>self.eps:
-                t = (np.eye(self.d)+msgin[i]*self.getinfc) @ t
-            t = t.reshape([self.d for _ in range(self.n)])
-            t = np.swapaxes(t,i,0)
-        # print(t)
-        self.T = t
-
-    def marginal(self,n1):
-        i = self.nid[n1]
-        marginal = np.sum(self.T,axis = tuple([dim for dim in range(self.n) if dim != i]))
-        return marginal
-
-    def pair_marginal(self,n1,n2):
-        i = self.nid[n1]
-        j = self.nid[n2]
-        pp = np.sum(self.T,axis = tuple([dim for dim in range(self.n) if (dim != i and dim != j)]))
-        if j<i:
-            pp = np.transpose(pp)
-        return pp
-    
 
 if __name__ == '__main__':
     # G,gname= graph('rrg',[20,3,1])
