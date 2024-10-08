@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import os
 
 '''
-定义Epidemic类作为初始化，各种算法作为子类。
+重新理清了PA的本质，多个公共点的情况不能再用联合概率的方式了，反而是最早的message形式更合理
 '''
 
 class Epidemic:
@@ -154,6 +154,44 @@ class DMP(Epidemic):
             self.marginal[i,0] = s
             self.marginal[i,1] = 1.-self.marginal[i,0]-self.marginal[i,2]
         self.H = new_H
+
+class mDMP(Epidemic):
+    def __init__(self, g, gtype, etype, epar, tau, init):
+        super().__init__(g, gtype, etype, epar, tau, init)
+        self.marginal_all.append(self.marginal.copy())
+        self.edges = list(self.G.edges())
+
+        self.algorithm = 'mDMP'
+        self.H = np.ones((self.n,self.n))
+        self.z = self.marginal[:,0].copy()
+        self.K = np.zeros((self.n))
+        self.k = np.zeros((self.n))
+
+    def evolution(self, t):
+        self.t = t
+        self.name += '_' + self.algorithm + self.algorithm_label
+        self.name += '_T=' + str(t) + '_tau=' + str(self.tau)
+        self.pt = 0
+        for _ in range(t):
+            for __ in range(self.spt):
+                self.step()
+                self.pt += self.tau
+            self.marginal_all.append(self.marginal.copy())
+        self.marginal_all = np.array(self.marginal_all)
+
+    def step(self):
+        new_H = self.H.copy()
+
+        for [a,b] in self.edges:
+            # print( self.l,self.z[a],np.prod(self.H[:,a]))
+            new_H[a, b] += -( self.r + self.l) * self.H[a,b] + self.r  + self.l*self.z[a]*np.prod(self.H[:,a])/self.H[b,a]
+            new_H[b, a] += -( self.r + self.l) * self.H[b,a] + self.r  + self.l*self.z[b]*np.prod(self.H[:,b])/self.H[a,b]
+        self.H = new_H
+
+        for i in self.nodes:
+            self.marginal[i,0] = self.z[i]*np.prod(self.H[:,i])
+            self.marginal[i,2] = self.marginal[i,2] + self.r*self.marginal[i,1] # 关键点,R变成经典的简单公式
+            self.marginal[i,1] = 1.-self.marginal[i,0]-self.marginal[i,2]
 
 class PA(Epidemic):
     def __init__(self, g, gtype, etype, epar, tau, init):
