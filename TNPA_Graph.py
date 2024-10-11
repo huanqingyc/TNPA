@@ -10,28 +10,15 @@ import time
 '''
 
 def print_region(G,R,N):
-    regions = get_Regions(G,R,N) 
-    n = 0
-    # print(len(regions))
-    for region in regions:
-        # print(len(region[0].edges()))
-        n += len(list(region.graph))
+    partition = get_partition(G,R,N) 
+    nodes = set()
+    for region in partition[R]:
+        nodes.update(list(region))
         print(list(region.graph),list(region.graph.edges()))
-        if region.subg:
-            print('subregions:')
-            for subg in region.subregions:
-                # print(list(subg))
-                print(list(subg),list(subg.edges()),len(subg))
-            if region.intersec:
-                print('intersections:')
-                for intersec in region.intersections:
-                    # print(list(intersec))
-                    print(list(intersec),list(intersec.edges()),len(intersec))
-        print()
-    print(n)
+    print(len(nodes))
 
 def print_region_diction(G,R,N,edges:bool,macro_G:bool = False):
-    regions_dict = get_Regions_diction(G,R,N) 
+    regions_dict = get_partition(G,R,N) 
     # print(len(regions))
     for r in range(3,R+1):
         all_nodes = set()
@@ -154,24 +141,7 @@ def Region_generator(G,e,R:int):
         
     return Region
 
-def get_Regions(G,R:int,N:int):
-    G = cut(G)
-    G_remain = deepcopy(G)
-    Regions = []
-    edges = list(G_remain.edges())
-    for e in edges:
-        # print(e)
-        if G_remain.has_edge(e[0],e[1]):
-            g = Region_generator(G_remain,e,R)
-            G_remain.remove_edges_from(list(g.edges())) # 不管怎样，g的所有边都可以从G_remain上移除了
-            if len(g) > 2:# 在一条边的基础上找到了其他区域
-                region = region_graph(g,R,N)
-                Regions.append(region)
-            if len(G_remain)>0:
-                G_remain = cut(G_remain,list(g))
-    return Regions
-
-def get_Regions_diction(G,R:int,N:int):
+def get_partition(G,R:int,N:int):
     G = cut(G)
     G_remain = deepcopy(G)
     Regions_dict = dict() # 字典的key为3到R,对应相应R取值的Region变量
@@ -181,20 +151,11 @@ def get_Regions_diction(G,R:int,N:int):
     for e in edges:
         # print(e)
         if G_remain.has_edge(e[0],e[1]):
-            # print(e)
-            # t = time.time()
             g = Region_generator(G_remain,e,R)
-            # print('Region',time.time()-t)
-            # print(len(g))
             G_remain.remove_edges_from(list(g.edges())) # 不管怎样，g的所有边都可以从G_remain上移除了
-            # print(list(g))
             if len(g) > 2:# 在一条边的基础上找到了其他区域
-                # t = time.time()
-                region = region_graph(g,R,N)
-                Regions_dict[R] = Regions_dict[R]+[region]
-                if R>3:
-                    Regions_dict = region.update_dict(Regions_dict)
-                # print('subRegion',time.time()-t)
+                local_partition = get_local_partition(g,R,N)
+                Regions_dict = (Regions_dict,local_partition,R+1)
             if len(G_remain)>0:
                 G_remain = cut(G_remain,list(g))
     return Regions_dict
@@ -290,176 +251,239 @@ def subregion_generator(g,g_full,e,R:int,N:int):
 
     return [subg,g_left]
 
-class region_graph:
-    def __init__(self,g,R,n): #pseudo 代表的是小于限定值R的时候的前置步骤，没有必要生成subg
-        self.graph = g
-        self.subg = (len(list(g))>n)
-        self.R = R
-        self.n = n
-        if self.subg:
-            self.divide_region()
-            self.n_sg = len(self.subregions)
-        else: # 下面可以改一下
-            regions_inside = []
-            if self.R>3:
-                subg_inside = []
-                G_remain = deepcopy(self.graph)
-                g_left = deepcopy(self.graph)
-                edges = list(G_remain.edges())
-                for e in edges:
-                    if G_remain.has_edge(e[0],e[1]):
-                        g = Region_generator(G_remain,e,self.R-1)
-                        G_remain.remove_edges_from(list(g.edges()))
-                        if len(g) > 2:
-                            g_left.remove_edges_from(list(g.edges)) # 顺便把小region里的边去掉
-                            region_inside = region_graph(g,self.R-1,self.n)
-                            if region_inside.subg: # 把已经找好的subg选出来
-                                for subg in region_inside.subregions:
-                                    subg_inside.append(subg)
-                            else:
-                                subg_inside.append(region_inside.graph)
+def partition_dict_update(dict_R,dict_r,R):
+    for r in range(3,R):
+        dict_R[r] = dict_R[r] + dict_r[r]
+    return dict_R
 
-                            regions_inside.append(region_inside)
-                        if len(G_remain)>0:
-                            G_remain = cut(G_remain,list(g))
-            self.regions_inside = regions_inside
-
-    def divide_region(self): 
-        # 先搜索有没有更小的Region：
-        regions_inside = []
-        subg_inside = []
-        G_remain = deepcopy(self.graph)
-        g_left = deepcopy(self.graph)
-        if self.R>3:
-            edges = list(G_remain.edges())
-            for e in edges:
-                if G_remain.has_edge(e[0],e[1]):
-                    g = Region_generator(G_remain,e,self.R-1)
-                    G_remain.remove_edges_from(list(g.edges()))
-                    if len(g) > 2:
-                        g_left.remove_edges_from(list(g.edges)) # 顺便把小region里的边去掉
-                        region_inside = region_graph(g,self.R-1,self.n)
-                        if region_inside.subg: # 把已经找好的subg选出来
-                            for subg in region_inside.subregions:
-                                subg_inside.append(subg)
-                        else:
-                            subg_inside.append(region_inside.graph)
-
-                        regions_inside.append(region_inside)
-                    if len(G_remain)>0:
-                        G_remain = cut(G_remain,list(g))
-
-        self.regions_inside = regions_inside
-        # 相对于R-1新添加部分的subg
-        subgs = []
-        # 保留连通区域
-        g_remain = remove_empty_nodes(g_left)# R新增的区域
-        if len(g_remain)>0:
-            while len(g_remain)>self.n or len(list(nx.connected_components(g_remain)))>1:# 很大或是多块都要再生成
-                # 找初始边
-                degree = dict(nx.degree(g_remain))
-                min_degree_node = [node for node, deg in degree.items() if deg == min(degree.values())][0]
-                if degree[min_degree_node] <= 2:
-                    neigh = list(g_remain[min_degree_node])
-                    neigh_degree = dict(nx.degree(g_remain,neigh))
-                    min_degree_neigh = [node for node, deg in neigh_degree.items() if deg == min(neigh_degree.values())][0]
-                    e = (min_degree_node,min_degree_neigh)
+def split_region(g,N):
+    regions = []
+    g_left = deepcopy(g)
+    edges = list(g.edges())
+    for e in edges:
+        n1,n2 = e
+        if g_left.has_edge(n1,n2):
+            region = nx.Graph()
+            region.add_edge(n1,n2)
+            g_left.remove_edge(n1,n2)
+            paths = list(nx.all_shortest_paths(g_left, n1, n2))
+            l = len(paths[0])-2
+            for path in paths:
+                if len(region)+l<=N:
+                    for node_id in range(len(path)-1):
+                        region.add_edge(path[node_id],path[node_id+1])
+                        g_left.remove_edge(path[node_id],path[node_id+1])
                 else:
-                    min_weight = 2*len(list(self.graph))
-                    e = None
-                    for edge in list(g_remain.edges()):
-                        [n1,n2] = edge
-                        weight = degree[n1]+degree[n2]
-                        if min_weight>weight:
-                            e = edge
-                # print(e,degree[e[0]]+degree[e[1]])
-                # 从这条边开始生成subg
-                temp = subregion_generator(g_remain,self.graph,e,self.R,self.n)
-                subg,g_remain = temp
+                    break
+            regions.append(region)
+            g_left = cut(g_left,list(region))
 
-                if len(subg)>0:
-                    subgs.append(subg)
-                    if len(g_remain)<=self.n:
+    return regions
+
+def search_connection(G,N,b1,n1,b2,n2):
+    connections = []
+    for a in b1:
+        for b in b2:
+            if a==b:
+                connections.append([])
+            elif nx.has_path(G,a,b):
+                connections += list(nx.all_simple_paths(G, n1, n2, N-n1-n2+2))
+    return connections
+
+def add_path():
+    None
+def remove_path():
+    None
+    # claim:一个圈只要被断掉，那么不管分成几份都等同于用PA即'目->口+||+口 =口+|+|+口  or 口+凵+凵'其中后者反而更麻烦一些
+def get_local_partition(g,R,N):
+    local_dict = dict() # 字典的key为3到R,对应相应R取值的Region变量
+    for r in range(3,R+1):
+        local_dict[r] = []
+    # 检索并删除R-1的region
+    G_remain = deepcopy(g) # 用于搜索子图的剩余区域，找不到region的边会被删掉，去掉子图后没有用的摇摆边(必然属于更长的圈)会被剪掉
+    g_left = deepcopy(g) # 只删除region的d真正的剩余区域
+    if R>3:
+        edges = list(G_remain.edges())
+        for e in edges:
+            if G_remain.has_edge(e[0],e[1]):
+                g = Region_generator(G_remain,e,R-1)
+                G_remain.remove_edges_from(list(g.edges))
+                if len(g) > 2:
+                    local_partition = get_local_partition(g,R-1,N)
+                    local_dict = (local_dict,local_partition,R)
+                    for region in local_partition[R-1]:
+                        g_left.remove_edges_from(list(region.edges)) 
+                        # 把小region里的边去掉,该操作会保留在小region中因为N的限制而本质上并没有被考虑的边
+                if len(G_remain)>0:
+                    G_remain = cut(G_remain,list(g))
+
+    if len(list(g))<=N:
+        local_dict[R].append(g)
+    else:
+        # 检索新添加区域和在R-1部分被舍去的边构成的region
+        g_left = remove_empty_nodes(g_left)# R新增的区域以及R-1时没有被考虑的部分
+        regions_in_g_left = []
+        G_parts = list(nx.connected_components(g_left)) # 经常会是不止一个连通区域
+        for G_remain in G_parts:
+            if not nx.is_tree(G_remain): # 树图就略过吧
+                G_remain = cut(G_remain) # 去掉无意义的摇摆边
+                if len(G_remain)<=N: # 剩下的都是圈，足够小就直接吃掉
+                    regions_in_g_left.append(G_remain)
+                else:
+                    regions_in_g_left += split_region(G_remain,N)
+
+        for g in regions_in_g_left:
+            g_left.remove_edges_from(list(g.edges()))
+        g_left = remove_empty_nodes(g_left)# 最后剩下的连接边
+
+        if len(g_left)>0:# 万一正好清空呢XP
+            last_regions = []
+            for region in (local_dict[R-1]+regions_in_g_left):
+                if len(region)<N: # 还能继续添加点的regions
+                    last_regions.append(region)
+                else:
+                    local_dict[R].append(region)
+            m = len(last_regions)
+            boundaries = [list(nx.intersection(region,g_left)) for region in last_regions] # 这些region的边界
+
+            # 自连接的合并：
+            for i in range(m):
+                region = last_regions[i]
+                n = len(region)
+                b = boundaries[i]
+                l = len(b)
+                if l>1:# 在遗留的边中没有自圈
+                    connections = []
+                    for j in range(l):
+                        for k in range(j+1,l):
+                            connections += list(nx.all_simple_paths(G, b[j], b[k], N-n+2)) # 添加后必然超上限的直接去掉
+                    connections = sorted(connections,key = len)
+                    for path in connections:
+                        g_test = deepcopy(region)
+                        for node_id in range(len(path)-1):
+                            g_test.add_edge(path[node_id],path[node_id+1])
+                        if len(g_test)<=N:
+                            region = g_test
+                            for node_id in range(len(path)-1):
+                                g_left.remove_edge(path[node_id],path[node_id+1])
+                    if len(region) == N: # 因为是先从R-1的region开始延伸，应该是不可能出现恰好重合，能合并的情况即len(g1+g2)=len(g1)
+                        local_dict[R].append(region)
+                        del last_regions[i]
+                        del boundaries[i]
+
+            # 剩余的小region间的合并：     
+            # 先搜索g_left构成的连接,并合并尽量邻居
+            m = len(last_regions)
+            region_graph = nx.Graph()
+            while True: # 反复尝试合并邻居，直到遍历后也不能合并为止
+                merged = False
+                bad_region_id = [] # 用来存储过程中发现的和所有邻居直接合并都太大的region
+                for i in range(m):
+                    for j in range(i+1,m):
+                        n1,n2 = len(last_regions[i]),len(last_regions[j])
+                        if len(set(list(last_regions[i])).update(list(last_regions[j])))>N:# 直接拼起来都不行直接跳过
+                            No_small_neighbor = True
+                            continue
+                        No_small_neighbor = False
+                        connection = []
+                        for a in boundaries[i]:
+                            for b in boundaries[j]:
+                                if a==b:
+                                    connection.append([])
+                                elif nx.has_path(G,a,b):
+                                    connection += list(nx.all_simple_paths(G, n1, n2, N-n1-n2+2))
+                        if len(connection)>1: # 有两条及以上的路径则试着合并
+                            # 通过最短的两条路径合并
+                            connection = sorted(connection,key = len)
+                            g_test = nx.union(last_regions[i],last_regions[j])
+                            path = connection[0]
+                            for node_id in range(len(path)-1):
+                                g_test.add_edge(path[node_id],path[node_id+1])
+                            path = connection[1]
+                            for node_id in range(len(path)-1):
+                                g_test.add_edge(path[node_id],path[node_id+1])
+                            if len(g_test)<=N: # 足够小
+                                region = g_test
+                                merged = True
+                                for node_id in range(len(path)-1):
+                                    g_left.remove_edge(path[node_id],path[node_id+1])
+                                path = connection[0]   
+                                for node_id in range(len(path)-1):
+                                    g_left.remove_edge(path[node_id],path[node_id+1])
+                                # 尝试合并其他的路径(相当于是新region的自环),哪怕恰好是N也要试一下，避免第三小长度为2（直连）,因此==N没有单独处理
+                                connection = connection[2:]
+                                for path in connection:
+                                    g_test = deepcopy(region)
+                                    for node_id in range(len(path)-1):
+                                        g_test.add_edge(path[node_id],path[node_id+1])
+                                    if len(g_test)<=N:
+                                        region = g_test
+                                        for node_id in range(len(path)-1):
+                                            g_left.remove_edge(path[node_id],path[node_id+1])
+                                    else: # 因为是从小到大排列的，所以短的不行长的更不行
+                                        break
+                        if merged:
+                            break
+                    if merged:# 能merge一定不No_small_neighbor
                         break
-            if len(g_remain)>0:
-                subgs.append(g_remain)
+                    if No_small_neighbor:
+                        bad_region_id.append(i)
+
+                # 每次开始下一次循环前删掉没用的东西
+                bad_region_id = sorted(bad_region_id,reverse=True)# 得从后往前删
+                for k in bad_region_id: 
+                    local_dict[R].append(last_regions[k])
+                    del last_regions[k]
+                    del boundaries[k]
+
+                if merged: #合并相应变量
+                    del last_regions[j]
+                    del boundaries[j]
+                    if len(region)==N:# 同上，不考虑极小概率的合并情况
+                        local_dict[R].append(region)
+                        del last_regions[i]
+                        del boundaries[i]
+                    else:
+                        last_regions[i] = region
+                        boundaries[i] = list(nx.intersection(region,g_left))
+                else:# 遍历后也没有成功
+                    break
+            
+            # 邻居之间尝试合并完成，搭建剩余的不太大的region构成的graph用来搜索可多区块合并的结构
+            '''
+            好麻烦啊...试试看常见的图到这一步复不复杂，实在不行就遍历
+            '''
+            last_regions = sorted(last_regions,key = len)# 从小到大排列
+            m = len(last_regions)
+            connections = [[False for _ in range(m)] for __ in range(m)]
+            region_graph = nx.Graph()
+            for i in range(m):
+                for j in range(i+1,m):
+                    n1,n2 = len(last_regions[i]),len(last_regions[j])
+                    if len(set(list(last_regions[i])).update(list(last_regions[j])))>N:# 直接拼起来都不行直接跳过
+                        continue
+                    connection = []
+                    for a in boundaries[i]:
+                        for b in boundaries[j]:
+                            if a==b:
+                                connection.append([])
+                            elif nx.has_path(G,a,b):
+                                connection += list(nx.all_simple_paths(G, n1, n2, N-n1-n2+2))
+                    if len(connection) > 0:
+                        connections[i,j] = connection
+                        region_graph.add_edge(i,j)
 
 
-        #联通区域断开
-        # g_remain = list(nx.connected_components(remove_empty_nodes(g_left)))
-        # if len(g_remain)>1:
-        #     for g in g_remain:
-        #         if len(g)<=self.n:
-        #             g_remain.remove(g)
-        #             subgs.append(g)
-
-        # while len(g_remain)>0:
-        #     g = g_remain.pop()
-        #     while len(g)>self.n:
-        #         # 找初始边
-        #         degree = dict(nx.degree(g_remain))
-        #         min_degree_node = [node for node, deg in degree.items() if deg == min(degree.values())][0]
-        #         if degree[min_degree_node] == 2:
-        #             neigh = list(g_remain[min_degree_node])
-        #             neigh_degree = dict(nx.degree(g_remain,neigh))
-        #             min_degree_neigh = [node for node, deg in neigh_degree.items() if deg == min(neigh_degree.values())][0]
-        #             e = (min_degree_node,min_degree_neigh)
-        #         else:
-        #             min_weight = 2*len(list(self.graph))
-        #             e = None
-        #             for edge in list(g_remain.edges()):
-        #                 [n1,n2] = edge
-        #                 weight = degree[n1]+degree[n2]
-        #                 if min_weight>weight:
-        #                     e = edge
-        #         # print(e,degree[e[0]]+degree[e[1]])
-        #         # 从这条边开始生成subg
-        #         temp = subregion_generator(g,self.graph,e,self.R,self.n)
-        #         subg,g = temp
-
-        #         if len(subg)>0:
-        #             subgs.append(subg)
-        #             if len(g)<=self.n:
-        #                 break
-        #     if len(g)>0:
-        #         subgs.append(g)
-
-        # 重塑，去掉公共边(和intersection)之后的subregion尺寸变小，如果可能可以合在一起
-        # for subg in subgs:
-        #     print(list(subg),list(subg.edges()))
-        # subgs.sort(key = lambda x:len(x))
-
-        # reform_subg = []
-        # unvisited_subg = list(range(len(subgs)))
-        # while len(unvisited_subg)>0:
-        #     subg_id = unvisited_subg[0]
-        #     subg = subgs[subg_id]
-        #     set_subg = set(subg)
-        #     for j in unvisited_subg:
-        #         if j != subg_id:
-        #             g = subgs[j]
-        #             if len(set(g).intersection(set_subg))>0:
-        #                 new_g_temp = nx.compose(subg,g)
-        #                 if len(new_g_temp)<=self.n:
-        #                     # print(subg_id,j,list(new_g_temp))
-        #                     subg = new_g_temp
-        #                     set_subg = set(subg)
-        #                     unvisited_subg.remove(j)
-        #     reform_subg.append(subg)
-        #     unvisited_subg.remove(subg_id)
-        # subgs = reform_subg
-        
-        self.subregions = subgs + subg_inside
-
-    def update_dict(self,region_diction):
-        # 还没改好，争取一劳永逸
-        regions_inside = self.regions_inside
-        while len(regions_inside)>0:
-            region_inside = regions_inside.pop()
-            region_diction[self.R-1] = region_diction[self.R-1] +[region_inside]
-            if self.R>4:
-                region_inside.update_dict(region_diction)
-        return region_diction
+            # 新的拓展方案：
+            # 构建一个新的图：每一个R-1的region是一个节点，一条或多条边存在在节点和节点之间以及节点自身，节点有权重n，边有长度l
+            # (n=N的节点可以省略，n+n_neighbour>N or all{n+n_neighbour+l_min+l_min2}>N的同理,后面两个放在循环过程中吸收自环之后可能更好)
+            # 因为每一个圈的长度都是R，造成的误差是同一数量级的，因此假定不分先后
+            # 重复以下循环：
+            # 首先试着吸收节点到自身的边，若n+l<=N则吸收之，吸收后n+l=N则将其去除。
+            # 接着吸收两点间的边：若n1+n2+l_min+l_min2<=N则吸收,吸收后n=N则将其去除。
+        else:# R-1的partition已经覆盖了这个Region
+            local_dict[R] = local_dict[R-1] + regions_in_g_left
+    return local_dict
 
 # about graph
 
@@ -718,7 +742,7 @@ if __name__ == '__main__':
     R = 4
     N = 4
     # t = time.time()
-    region_dict = get_Regions_diction(G,R,N)
+    region_dict = get_partition(G,R,N)
     # print(time.time()-t)
 
     for r in range(3,R+1):
