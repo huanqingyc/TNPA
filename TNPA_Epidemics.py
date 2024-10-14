@@ -9,7 +9,7 @@ import os
 
 class Epidemic:
     def __init__(self,g,gtype,etype,epar,tau,init):
-        self.G = deepcopy(g)
+        self.G = nx.Graph(g)
         self.nodes = list(self.G)
         self.tau = tau
         self.spt = int(1/tau) # steps per unit time
@@ -215,13 +215,10 @@ class TNPA(PA):
 
         self.Regions = []
         self.TN = []
+        self.neighs_of_region = [] # 正序的指标含义[区块序号，点，点的邻居]
         for region in partition:
-            self.Regions.append(region.graph)
-            self.TN.append(Region(region,self.etype,self.epar,self.marginal[list(region.graph)],self.d))
-
-        neighs_of_region = []
-
-        for region in self.Regions:
+            self.Regions.append(region)
+            self.TN.append(Region(region,self.etype,self.epar,self.marginal[list(region)],self.d))
             nodes = list(region)
             neighs = []
             for i in nodes:
@@ -230,15 +227,14 @@ class TNPA(PA):
                     if j not in nodes:
                         neigh.append(j)
                 neighs.append(neigh)
-            neighs_of_region.append(neighs)
-        
-        self.neighs_of_region = neighs_of_region # 正序的指标含义[区块序号，点，点的邻居]
+            self.neighs_of_region.append(neighs)
+
         [self.edges,self.edges_TN,self.nodes] = self.get_PA_part() # 去除TN内边的其他边
 
         self.num_tn = len(partition)
 
     def get_PA_part(self):
-        leftg = self.G.copy()
+        leftg = nx.Graph(self.G)
         out_nodes = set(self.G)
         edges_TN = []
         for Region_graph in self.Regions:
@@ -360,7 +356,6 @@ def read_data(filename):
     return [np.array(marginal_all),np.array(average)]
 
 class Region:
-    eps = 1e-7
     def __init__(self,G,epar,init,d):
         self.G = G.graph
         self.nodes = list(self.G)
@@ -413,7 +408,7 @@ class Region:
             t = np.swapaxes(t,i,0)
             t = t.reshape(self.d,-1)
             t = self.local @ t
-            if abs(msgin[i])>self.eps:
+            if abs(msgin[i])>0:
                 t = (np.eye(self.d)+msgin[i]*self.getinfc) @ t
             t = t.reshape([self.d for _ in range(self.n)])
             t = np.swapaxes(t,i,0)

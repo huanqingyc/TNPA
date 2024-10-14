@@ -174,35 +174,38 @@ if __name__ == '__main__':
 
     # n = 0
     # G,gname= graph('club')
-    G,gname= graph('USA')
-    # t_max = 50
-
-    # G,gname= graph('rrg',[200,3,1])
-    # G,gname= graph('rrg',[1000,3,1])
-    # n = 20
-    # k = 3
-    # seed = 1
+    # t_max = 200
+    # G,gname= graph('USA')
     # t_max = 200
 
-    # G,gname = graph('triangle_tree',[6,1,50])
-    # G,gname = graph('squares',[20])
-    # G,gname = graph('lattice',[10])
-    
-    # G,gname = graph('random_tree',[150,35])
-    t_max = 200
+    # G,gname= graph('erg',[500,3,1])
+    # t_max = 200
 
+    # G,gname= graph('rrg',[200,3,1])
+    # t_max = 200
+    # n = 30
+    # k = 3
+    # seed_clique = 3
+    # G = add_clique(G,n,k,seed_clique)
+    # gname = str(n) + '*' + str(k) + 'cliqued_' + gname
+
+    # G,gname = graph('triangle_tree',[6,1,50])
+    # t_max = 400
+    # G,gname = graph('cross_square',[20])
+    # t_max = 400   
+    # G,gname = graph('lattice',[10])
+    # t_max = 300
+
+    # G,gname = graph('random_tree',[150,35])
+    # t_max = 500
     # n = 12
     # k = 3
     # seed_clique = 48
-
     # G = add_clique(G,n,k,seed_clique)
-    # gname = str(n) + '*' + str(k) + 'cliqued_seed=' + str(seed_clique) + gname
+    # gname = str(n) + '*' + str(k) + 'cliqued_' + gname
 
     tau = 0.1
 
-    # t_max = 2
-    # tau = 1.
-    
     # rho = 0.1
     rho = 0.05
     lamda = 0.1
@@ -220,46 +223,48 @@ if __name__ == '__main__':
     # G,gname = graph('elist',['test2',elist])
 
     # 模型参数
-    if True:
+    if False:
+        set_environment_variables(4)
+
         s = MCMC_mp(G,gname,etype,epar,tau,ini)
-        s.evolution(t_max,repeats= 1000000,mp_num=20)
+        s.evolution(t_max,repeats= 1000000,mp_num=8)
         s.save_data(precision)
 
         s = PA(G,gname,etype,epar,tau,ini)
         s.evolution(t_max)
         s.save_data(precision)
 
-        s = DMP(G,gname,etype,epar,tau,ini)
+        # s = DMP(G,gname,etype,epar,tau,ini)
+        # s.evolution(t_max)
+        # s.save_data(precision)
+
+        s = mDMP(G,gname,etype,epar,tau,ini)
         s.evolution(t_max)
         s.save_data(precision)
 
-        region_dict = get_Regions_diction(G,3,7)
-        label = '_R3N7'
-        s = TNPA(G,gname,etype,epar,tau,ini,region_dict[3],label)
-        s.evolution(t_max)
-        s.save_data(precision)
+        R = 4
+        N = 4
+        region_dict = get_Regions_diction(G,R,N)
+        for r in range(3,R+1):
+            print(r)
+            label = '_R' + str(r)  + 'N' + str(N)
+            s = TNPA(G,gname,etype,epar,tau,ini,region_dict[r],label)
+            s.evolution(t_max)
+            s.save_data(precision)
 
-        # R = 4
-        # N = 4
-        # region_dict = get_Regions_diction(G,R,N)
-        # for r in range(3,R+1):
-        #     print(r)
-        #     label = '_R' + str(r)  + 'N' + str(N)
-        #     s = TNPA(G,gname,etype,epar,tau,ini,region_dict[r],label)
-        #     s.evolution(t_max)
-        #     s.save_data(precision)
-
-        for N in range(4,12,2):
-            R = [4]
-            region_dict = get_Regions_diction(G,max(R),N)
-            for r in R:
-                # print(r)
-                label = '_R' + str(r)  + 'N' + str(N)
-                s = TNPA(G,gname,etype,epar,tau,ini,region_dict[r],label)
-                s.evolution(t_max)
-                s.save_data(precision)
+        # for N in range(4,8):
+        # for N in range(4,12,2):
+            # R = [4]
+        #     # R = [3,4]
+        #     region_dict = get_Regions_diction(G,max(R),N)
+        #     for r in R:
+        #         # print(r)
+        #         label = '_R' + str(r)  + 'N' + str(N)
+        #         s = TNPA(G,gname,etype,epar,tau,ini,region_dict[r],label)
+        #         s.evolution(t_max)
+        #         s.save_data(precision)
         
     else:
-        print_region_diction(G,4,4,False,True)
+        print_region_diction(G,8,8,False)
 
 # nohup python -u TNPA.py >/dev/null 2>&1 &
