@@ -357,7 +357,7 @@ def read_data(filename):
 
 class Region:
     def __init__(self,G,epar,init,d):
-        self.G = G.graph
+        self.G = G
         self.nodes = list(self.G)
         self.n = len(self.nodes)
         self.l = epar[0]
@@ -408,7 +408,7 @@ class Region:
             t = np.swapaxes(t,i,0)
             t = t.reshape(self.d,-1)
             t = self.local @ t
-            if abs(msgin[i])>0:
+            if msgin[i]>0: # msgin是条件概率I|S之和
                 t = (np.eye(self.d)+msgin[i]*self.getinfc) @ t
             t = t.reshape([self.d for _ in range(self.n)])
             t = np.swapaxes(t,i,0)

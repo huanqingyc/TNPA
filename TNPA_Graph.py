@@ -3,9 +3,7 @@ import numpy as np
 import time
 
 '''
-现行版本，intersection就当他不存在吧
-调整subg的分割方案，以保证R增大结果一定变好的一致性。
-具体实现为：先挑出R的Region后，在这个Region中搜索R-1的Region，先生成内部的分割方案，再在其基础上向外拓展，生成剩余部分的subg分割方案。
+重新理清了PA的本质，多个公共点的情况不能再用联合概率的方式了，反而是最早的message形式更合理,因此也没有必要划分subregion
 '''
 
 def print_region(G,R,N):
@@ -636,16 +634,6 @@ if __name__ == '__main__':
     # G = cut(G)
     # print(len(G))
     # G,gname= graph('cross_square',[5])
-
-    # print(len(regions))
-    # for region in regions:
-    #     print(list(region.graph))
-    #     if region.subg:
-    #         print('subregions:')
-    #         for part in region.subregions:
-    #             print(list(part))
-    #         # print(part.edges())
-    #     print()
 
     R = 6
     N = 6

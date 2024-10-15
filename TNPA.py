@@ -224,6 +224,7 @@ if __name__ == '__main__':
 
     # 模型参数
     if False:
+    # if True:
         set_environment_variables(4)
 
         s = MCMC_mp(G,gname,etype,epar,tau,ini)
@@ -234,11 +235,7 @@ if __name__ == '__main__':
         s.evolution(t_max)
         s.save_data(precision)
 
-        # s = DMP(G,gname,etype,epar,tau,ini)
-        # s.evolution(t_max)
-        # s.save_data(precision)
-
-        s = mDMP(G,gname,etype,epar,tau,ini)
+        s = DMP(G,gname,etype,epar,tau,ini)
         s.evolution(t_max)
         s.save_data(precision)
 
