@@ -163,16 +163,18 @@ def split_region(g,N):
             region = nx.Graph()
             region.add_edge(n1,n2)
             g_left.remove_edge(n1,n2)
-            paths = list(nx.all_shortest_paths(g_left, n1, n2))
-            l = len(paths[0])-2
-            for path in paths:
-                if len(region)+l<=N:
-                    add_path(region,path)
-                    remove_path(g_left,path)
-                else:
-                    break
-            regions.append(region)
-            g_left = cut(g_left,list(region))
+            if nx.has_path(g_left, n1, n2): # 同样可能出现奇葩情况
+                paths = list(nx.all_shortest_paths(g_left, n1, n2))
+                l = len(paths[0])-2
+                for path in paths:
+                    if len(region)+l<=N:
+                        add_path(region,path)
+                        remove_path(g_left,path)
+                    else:
+                        break
+                if len(region)>2: # 会出现g_left是若干小圈的边围成的一个大圈的情况，这个大圈有不能放进region里，没有这个判定会报错
+                    regions.append(region)
+            g_left = cut(g_left)
 
     return regions
 
@@ -187,7 +189,7 @@ def remove_path(g,path):
 # claim:一个圈只要被断掉，那么不管分成几份都等同于用PA即'目->口+||+口 =口+|+|+口  or 口+凵+凵'其中后者反而更麻烦一些
 def get_local_partition(g,R,N):
     local_dict = dict() # 字典的key为3到R,对应相应R取值的Region变量
-    for r in range(3,R+1):
+    for r in range(2,R+1): # 添加一个key=2,避免后面索引dict[R-1]报错
         local_dict[r] = []
 
     # 检索并删除R=R-1的region
@@ -214,7 +216,6 @@ def get_local_partition(g,R,N):
     else:
         # 检索新添加区域和在R-1部分被舍去的边构成的region
         g_left = remove_empty_nodes(g_left)# R新增的区域以及R-1时没有被考虑的部分
-        print(list(g_left))
         regions_in_g_left = []
         G_parts = list(nx.connected_components(g_left)) # 经常会是不止一个连通区域
         for nodes in G_parts:
@@ -226,8 +227,8 @@ def get_local_partition(g,R,N):
                 else:
                     regions_in_g_left += split_region(G_remain,N)
 
-        for g in regions_in_g_left:
-            g_left.remove_edges_from(list(g.edges()))
+        for region in regions_in_g_left:
+            g_left.remove_edges_from(list(region.edges()))
         g_left = remove_empty_nodes(g_left)# 最后剩下的连接边
 
         if len(g_left)>0:# 万一正好清空呢XP
@@ -286,7 +287,7 @@ def get_local_partition(g,R,N):
                 for i in range(m):
                     for j in range(i+1,m):
                         n1,n2 = len(last_regions[i]),len(last_regions[j])
-                        if len(set(list(last_regions[i])).update(list(last_regions[j])))>N:# 直接拼起来都不行直接跳过
+                        if len(set(list(last_regions[i])+list(last_regions[j])))>N:# 直接拼起来都不行直接跳过
                             continue
                         # 搜索g_left构成的连接(和公共点)
                         connection = []
@@ -294,8 +295,8 @@ def get_local_partition(g,R,N):
                             for b in boundaries[j]:
                                 if a==b:
                                     connection.append([])
-                                elif nx.has_path(g_left,a,b):
-                                    connection += list(nx.all_simple_paths(g_left, n1, n2, N-n1-n2+2))
+                                elif g_left.has_node(a) and g_left.has_node(b) and nx.has_path(g_left,a,b):
+                                    connection += list(nx.all_simple_paths(g_left, a, b, N-n1-n2+2))
                         
                         if len(connection)>1: # 有两条及以上的路径则试着合并
                             # 通过最短的两条路径合并
