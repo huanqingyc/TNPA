@@ -4,18 +4,17 @@ import matplotlib.pyplot as plt
 import os
 
 '''
-重新理清了PA的本质，多个公共点的情况不能再用联合概率的方式了，反而是最早的message形式更合理
+全线改为SIR模型，不再有etype
 '''
 
 class Epidemic:
-    def __init__(self,g,gtype,etype,epar,tau,init):
+    def __init__(self,g,gtype,epar,tau,init):
         self.G = nx.Graph(g)
         self.nodes = list(self.G)
         self.tau = tau
         self.spt = int(1/tau) # steps per unit time
-        self.name = etype + '_' + str(epar) +'_'+ gtype
-        self.etype = etype
-        self.d = len(set(etype)) # 我可真是个小天才，笑
+        self.name = str(epar) +'_'+ gtype
+        self.d = 3 # 我可真是个小天才，笑
 
         self.n = len(g)
         self.marginal_all = []
@@ -62,11 +61,9 @@ class Epidemic:
         f.close()
 
 class MCMC_mp(Epidemic):
-    def __init__(self, g, gtype, etype, epar, tau, init):
-        super().__init__(g, gtype, etype, epar, tau, init)
+    def __init__(self, g, gtype, epar, tau, init):
+        super().__init__(g, gtype, epar, tau, init)
         self.algorithm = 'MCMC'
-        # 替代sys_init 和update_to
-        # self.name += '_single_ini=' + str(init) + '_'
         self.name += '_' + self.algorithm
 
     def evolution(self, t, repeats, mp_num = 10):
@@ -95,7 +92,6 @@ def MCMC(para):
     np.random.seed(seed)
     marginal_sum[0] = init_state*repeats
     infect_multiplier = epar[0] * adjacency_matrix
-    # print(infect_multiplier[0,138])
     for _ in range(repeats):
         marginal = init_state.copy()
         for t in range(1,t_max+1):
@@ -104,19 +100,17 @@ def MCMC(para):
                 current_rand = rand[s,:]
                 infect_prob = infect_multiplier @ marginal[:,1]
                 # print(infect_prob[1])
-                infect = (marginal[:, 0] == 1) & (current_rand < infect_prob)
-                recover = (marginal[:, 1] == 1) & (current_rand < epar[1])
+                infected = (marginal[:, 0] == 1) & (current_rand < infect_prob)
+                recovered = (marginal[:, 1] == 1) & (current_rand < epar[1])
                 # print(infect[1])
-                marginal[infect,0] = 0
-                marginal[infect,1] = 1
-                marginal[recover,1] = 0
-                marginal[recover,2] = 1
+                marginal[infected] = [0,1,0]
+                marginal[recovered] = [0,0,1]
             marginal_sum[t] += marginal
     return marginal_sum
 
 class DMP(Epidemic):
-    def __init__(self, g, gtype, etype, epar, tau, init):
-        super().__init__(g, gtype, etype, epar, tau, init)
+    def __init__(self, g, gtype, epar, tau, init):
+        super().__init__(g, gtype, epar, tau, init)
         self.marginal_all.append(self.marginal.copy())
         self.edges = list(self.G.edges())
 
@@ -153,8 +147,8 @@ class DMP(Epidemic):
             self.marginal[i,1] = 1.-self.marginal[i,0]-self.marginal[i,2]
 
 class PA(Epidemic):
-    def __init__(self, g, gtype, etype, epar, tau, init):
-        super().__init__(g, gtype, etype, epar, tau, init)
+    def __init__(self, g, gtype, epar, tau, init):
+        super().__init__(g, gtype, epar, tau, init)
         self.marginal_all.append(self.marginal.copy())
         self.edges = list(self.G.edges())
 
@@ -207,8 +201,8 @@ class PA(Epidemic):
         self.SS = new_SS
 
 class TNPA(PA):
-    def __init__(self, g, gtype, etype, epar, tau, init, partition, label):
-        super().__init__(g, gtype, etype, epar, tau, init)
+    def __init__(self, g, gtype, epar, tau, init, partition, label):
+        super().__init__(g, gtype, epar, tau, init)
 
         self.algorithm = 'TNPA'
         self.algorithm_label += label
@@ -218,7 +212,7 @@ class TNPA(PA):
         self.neighs_of_region = [] # 正序的指标含义[区块序号，点，点的邻居]
         for region in partition:
             self.Regions.append(region)
-            self.TN.append(Region(region,self.etype,self.epar,self.marginal[list(region)],self.d))
+            self.TN.append(Region(region,self.epar,self.marginal[list(region)],self.d))
             nodes = list(region)
             neighs = []
             for i in nodes:
@@ -261,13 +255,13 @@ class TNPA(PA):
         for i in range(self.num_tn):
             nodes = list(self.Regions[i])
             neighs = self.neighs_of_region[i]
-            msgin_all = []
+            msgin_all = np.zeros([len(nodes)])
             for j in range(len(nodes)):
-                msgin = 0
                 if len(neighs[j])>0 and self.marginal[nodes[j],0] > 0: # 有在外面的邻居，且由非零的marginal才有计算的意义
                     msgin = sum(self.IS[neighs[j],nodes[j]])/self.marginal[nodes[j],0]
-                msgin_all.append(msgin)
-            self.TN[i].update(np.array(msgin_all))
+                    msgin_all[j] = min(msgin,1./self.l) # 可能存在message>1/l导致报错的情况
+            # print(msgin_all)
+            self.TN[i].update(msgin_all)
 
         super().step() # 再用PA更新TN以外的边和点
 
@@ -287,8 +281,8 @@ class TNPA(PA):
                 self.SS[a,b] = pp[0,0]
                 self.SS[b,a] = pp[0,0]
 
-def set_environment_variables():
-    threads = '4'
+def set_environment_variables(threads = 4):
+    threads = str(threads)
     os.environ["MKL_NUM_THREADS"] = threads
     os.environ["NUMEXPR_NUM_THREADS"] = threads
     os.environ["OMP_NUM_THREADS"] = threads
@@ -409,10 +403,14 @@ class Region:
             t = t.reshape(self.d,-1)
             t = self.local @ t
             if msgin[i]>0: # msgin是条件概率I|S之和
-                t = (np.eye(self.d)+msgin[i]*self.getinfc) @ t
+                # op = (np.eye(self.d)+msgin[i]*self.getinfc) 
+                # if (op<0).any():
+                #     print('error')
+                t = (np.eye(self.d)+msgin[i]*self.getinfc)@ t
             t = t.reshape([self.d for _ in range(self.n)])
             t = np.swapaxes(t,i,0)
-
+        # if (t<0).any():
+        #     print('error')
         self.T = t
 
     def marginal(self,i):
@@ -433,8 +431,8 @@ if __name__ == '__main__':
     # G,gname = graph('qubics',[2])
     # elist = [(0,1),(0,2),(0,3),(1,2),(2,3),(1,3)]
     # G,gname = graph('elist',['test',elist])
-    # G,gname = graph('squares',[20])
-    G,gname = graph('macrotree')
+    G,gname = graph('cross_square',[5])
+    # G,gname = graph('macrotree')
     gname += 'test'
 
 

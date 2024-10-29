@@ -142,6 +142,7 @@ def get_partition(G,R:int,N:int):
             g = Region_generator(G_remain,e,R)
             G_remain.remove_edges_from(list(g.edges())) # 不管怎样，g的所有边都可以从G_remain上移除了
             if len(g) > 2:# 在一条边的基础上找到了其他区域
+                # print('a new region')
                 local_partition = get_local_partition(g,R,N)
                 Regions_dict = partition_dict_update(Regions_dict,local_partition,R+1)
             if len(G_remain)>0:
@@ -154,6 +155,7 @@ def partition_dict_update(dict_R,dict_r,R):
     return dict_R
 
 def split_region(g,N):
+    # print(list(g.edges()))
     regions = []
     g_left = nx.Graph(g)
     edges = list(g.edges())
@@ -189,13 +191,14 @@ def remove_path(g,path):
 # claim:一个圈只要被断掉，那么不管分成几份都等同于用PA即'目->口+||+口 =口+|+|+口  or 口+凵+凵'其中后者反而更麻烦一些
 def get_local_partition(g,R,N):
     local_dict = dict() # 字典的key为3到R,对应相应R取值的Region变量
-    for r in range(2,R+1): # 添加一个key=2,避免后面索引dict[R-1]报错
+    for r in range(2,R+1): # 添加一个key=2
         local_dict[r] = []
 
     # 检索并删除R=R-1的region
     G_remain = nx.Graph(g) # 用于搜索子图的剩余区域，找不到region的边会被删掉，去掉子图后没有用的摇摆边(必然属于更长的圈)会被剪掉
     g_left = nx.Graph(g) # 只删除region的d真正的剩余区域
     if R>3:
+        # print("Now searching for R = "+str(R-1))
         edges = list(G_remain.edges())
         for e in edges:
             if G_remain.has_edge(e[0],e[1]):
@@ -209,13 +212,17 @@ def get_local_partition(g,R,N):
                         # 把region小region里的边去掉,该操作会保留在小region中因为N的限制而本质上并没有被考虑的边
                 if len(G_remain)>0:
                     G_remain = cut(G_remain,list(region))
-    
+        # print('Search of R=' +str(R-1)+' is finished')
+        # for region in local_dict[R-1]:
+        #     print(list(region))
+
     # R=R的部分
     if len(list(g))<=N:
         local_dict[R].append(g)
     else:
         # 检索新添加区域和在R-1部分被舍去的边构成的region
         g_left = remove_empty_nodes(g_left)# R新增的区域以及R-1时没有被考虑的部分
+        # print(list(g_left),list(g_left.edges()))
         regions_in_g_left = []
         G_parts = list(nx.connected_components(g_left)) # 经常会是不止一个连通区域
         for nodes in G_parts:
@@ -301,7 +308,8 @@ def get_local_partition(g,R,N):
                         if len(connection)>1: # 有两条及以上的路径则试着合并
                             # 通过最短的两条路径合并
                             connection = sorted(connection,key = len)
-                            g_test = nx.union(last_regions[i],last_regions[j])
+                            # print(list(last_regions[i].edges()),list(last_regions[j].edges()))
+                            g_test = nx.compose(last_regions[i],last_regions[j])
                             add_path(g_test,connection[0])
                             add_path(g_test,connection[1])
                             if len(g_test)<=N: # 足够小
