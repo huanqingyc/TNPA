@@ -6,21 +6,21 @@ import time
 重新理清了PA的本质，多个公共点的情况不能再用联合概率的方式了，反而是最早的message形式更合理,因此也没有必要划分subregion
 '''
 
-def print_region(G,R,N):
-    partition = get_partition(G,R,N) 
+def print_region(G,L,N):
+    partition = get_partition(G,L,N) 
     nodes = set()
-    for region in partition[R]:
+    for region in partition[L]:
         nodes.update(list(region))
         print(list(region),list(region.edges()))
     print(len(nodes))
 
-def print_region_diction(G,R,N,edges:bool):
-    regions_dict = get_partition(G,R,N) 
+def print_region_diction(G,L,N,edges:bool):
+    regions_dict = get_partition(G,L,N) 
     # print(len(regions))
-    for r in range(3,R+1):
+    for l in range(3,L+1):
         all_nodes = []
-        print('R='+str(r))
-        for region in regions_dict[r]:
+        print('L='+str(l))
+        for region in regions_dict[l]:
             all_nodes += list(region)
             print(list(region))
             if edges:
@@ -70,9 +70,9 @@ def remove_empty_nodes(G,nodes = False):
     else:
         return G
 
-def Region_generator(G,e,R:int):
-    """Generate a subgraph Region(R) from the given edge e on the corresponding graph G, 
-    which satisfies that the shortest loop cross the Region and G\Region is longer than R (cross means share more than 1 edge here).
+def Region_generator(G,e,L:int):
+    """Generate a subgraph Region(L) from the given edge e on the corresponding graph G, 
+    which satisfies that the shortest loop cross the Region and G\other Region is longer than L (cross means share at least 1 edge here).
     
     Parameters
     ----------
@@ -80,7 +80,7 @@ def Region_generator(G,e,R:int):
         The complete graph.
     e : tuple of int
         The beginning edge, it should be an element of list(G.edges()).
-    R : int
+    L : int
 
     Returns
     -------
@@ -107,7 +107,7 @@ def Region_generator(G,e,R:int):
                 if nx.has_path(G_environment,n1,n2):
                     shortest_paths_out = list(nx.all_shortest_paths(G_environment, n1, n2))
                     l_shortest_paths_in = nx.shortest_path_length(Region, n1, n2)
-                    if len(shortest_paths_out[0]) + l_shortest_paths_in <= R+1:
+                    if len(shortest_paths_out[0]) + l_shortest_paths_in <= L+1:
                         edge_new = True
                         new_path += shortest_paths_out
                                     
@@ -129,30 +129,30 @@ def Region_generator(G,e,R:int):
         
     return Region
 
-def get_partition(G,R:int,N:int):
+def get_partition(G,L:int,N:int):
     G = cut(G)
     G_remain = nx.Graph(G)
-    Regions_dict = dict() # 字典的key为3到R,对应相应R取值的Region变量
-    for r in range(3,R+1):
-        Regions_dict[r] = []
+    Regions_dict = dict() # 字典的key为3到L,对应相应L取值的Region变量
+    for l in range(3,L+1):
+        Regions_dict[l] = []
     edges = list(G_remain.edges())
     for e in edges:
         # print(e)
         if G_remain.has_edge(e[0],e[1]):
-            g = Region_generator(G_remain,e,R)
+            g = Region_generator(G_remain,e,L)
             G_remain.remove_edges_from(list(g.edges())) # 不管怎样，g的所有边都可以从G_remain上移除了
             if len(g) > 2:# 在一条边的基础上找到了其他区域
                 # print('a new region')
-                local_partition = get_local_partition(g,R,N)
-                Regions_dict = partition_dict_update(Regions_dict,local_partition,R+1)
+                local_partition = get_local_partition(g,L,N)
+                Regions_dict = partition_dict_update(Regions_dict,local_partition,L+1)
             if len(G_remain)>0:
                 G_remain = cut(G_remain,list(g))
     return Regions_dict
 
-def partition_dict_update(dict_R,dict_r,R):
-    for r in range(3,R):
-        dict_R[r] = dict_R[r] + dict_r[r]
-    return dict_R
+def partition_dict_update(dict_L,dict_l,L):
+    for l in range(3,L):
+        dict_L[l] = dict_L[l] + dict_l[l]
+    return dict_L
 
 def split_region(g,N):
     # print(list(g.edges()))
@@ -189,39 +189,40 @@ def remove_path(g,path):
             g.remove_edge(path[node_id],path[node_id+1])
 
 # claim:一个圈只要被断掉，那么不管分成几份都等同于用PA即'目->口+||+口 =口+|+|+口  or 口+凵+凵'其中后者反而更麻烦一些
-def get_local_partition(g,R,N):
-    local_dict = dict() # 字典的key为3到R,对应相应R取值的Region变量
-    for r in range(2,R+1): # 添加一个key=2
-        local_dict[r] = []
+def get_local_partition(g,L,N):
+    local_dict = dict() # 字典的key为3到L,对应相应L取值的Region变量
+    for l in range(2,L+1): # 添加一个key=2
+        local_dict[l] = []
 
-    # 检索并删除R=R-1的region
+    # 检索并删除L=L-1的region
     G_remain = nx.Graph(g) # 用于搜索子图的剩余区域，找不到region的边会被删掉，去掉子图后没有用的摇摆边(必然属于更长的圈)会被剪掉
     g_left = nx.Graph(g) # 只删除region的d真正的剩余区域
-    if R>3:
-        # print("Now searching for R = "+str(R-1))
+
+    if L>3:
+        # print("Now searching for L = "+str(L-1))
         edges = list(G_remain.edges())
         for e in edges:
             if G_remain.has_edge(e[0],e[1]):
-                region = Region_generator(G_remain,e,R-1)
+                region = Region_generator(G_remain,e,L-1)
                 G_remain.remove_edges_from(list(region.edges))
                 if len(region) > 2:
-                    local_partition = get_local_partition(region,R-1,N)
-                    local_dict = partition_dict_update(local_dict,local_partition,R)
-                    for region in local_partition[R-1]:
+                    local_partition = get_local_partition(region,L-1,N)
+                    local_dict = partition_dict_update(local_dict,local_partition,L)
+                    for region in local_partition[L-1]:
                         g_left.remove_edges_from(list(region.edges)) 
                         # 把region小region里的边去掉,该操作会保留在小region中因为N的限制而本质上并没有被考虑的边
                 if len(G_remain)>0:
                     G_remain = cut(G_remain,list(region))
-        # print('Search of R=' +str(R-1)+' is finished')
-        # for region in local_dict[R-1]:
+        # print('Search of L=' +str(L-1)+' is finished')
+        # for region in local_dict[L-1]:
         #     print(list(region))
 
-    # R=R的部分
+    # L=L的部分
     if len(list(g))<=N:
-        local_dict[R].append(g)
+        local_dict[L].append(g)
     else:
-        # 检索新添加区域和在R-1部分被舍去的边构成的region
-        g_left = remove_empty_nodes(g_left)# R新增的区域以及R-1时没有被考虑的部分
+        # 检索新添加区域和在L-1部分被舍去的边构成的region
+        g_left = remove_empty_nodes(g_left)# L新增的区域以及L-1时没有被考虑的部分
         # print(list(g_left),list(g_left.edges()))
         regions_in_g_left = []
         G_parts = list(nx.connected_components(g_left)) # 经常会是不止一个连通区域
@@ -240,19 +241,19 @@ def get_local_partition(g,R,N):
 
         if len(g_left)>0:# 万一正好清空呢XP
             # 搜索合并的方案：
-            # 构建一个新的图：每一个R-1的region是一个节点，一条或多条边存在在节点和节点之间以及节点自身，节点有权重n，边有长度l
+            # 构建一个新的图：每一个L-1的region是一个节点，一条或多条边存在在节点和节点之间以及节点自身，节点有权重n，边有长度l
             # (n=N的节点可以省略，n+n_neighbour>N or all{n+n_neighbour+l_min+l_min2}>N的同理,后面两个放在循环过程中吸收自环之后可能更好)
-            # 因为每一个圈的长度都是R，造成的误差是同一数量级的，因此假定不分先后
+            # 因为每一个圈的长度都是L，造成的误差是同一数量级的，因此假定不分先后
             # 首先试着吸收节点到自身的边，若n+l<=N则吸收之，吸收后若n+l=N则将其去除，否则继续尝试
             # 接着重复以下循环：
             # 接着吸收两点间的边：若n1+n2+l_min+l_min2<=N则吸收,吸收后n=N则将其去除。
             
             last_regions = []
-            for region in (local_dict[R-1] + regions_in_g_left):
+            for region in (local_dict[L-1] + regions_in_g_left):
                 if len(region)<N: # 还能继续添加点的regions
                     last_regions.append(region)
                 else:
-                    local_dict[R].append(region)
+                    local_dict[L].append(region)
             m = len(last_regions)
             boundaries = [list(nx.intersection(region,g_left)) for region in last_regions] # 这些region对于g_left的边界
 
@@ -276,17 +277,17 @@ def get_local_partition(g,R,N):
                         if len(g_test)<=N:
                             region = g_test
                             remove_path(g_left,path)
-                    if len(region) == N: # 因为是先从R-1的region开始延伸，应该是不可能出现恰好重合，能合并的情况即len(g1+g2)=len(g1)
+                    if len(region) == N: # 因为是先从L-1的region开始延伸，应该是不可能出现恰好重合，能合并的情况即len(g1+g2)=len(g1)
                         remove_id.append(i)
             
             remove_id = sorted(remove_id,reverse=True)# 得从后往前删
             for k in remove_id: 
-                local_dict[R].append(last_regions[k])
+                local_dict[L].append(last_regions[k])
                 del last_regions[k]
                 del boundaries[k]
-
             # 剩余的小region间的合并：     
             boundaries = [[node for node in list(region) if len(region[node])<len(g[node])] for region in last_regions] # 考虑邻居合并会出现公共点的情况，因此对于boundaries的定义是不一样的
+
             while len(last_regions)>1: # 反复尝试合并邻居
                 m = len(last_regions)
                 merged = False
@@ -339,16 +340,15 @@ def get_local_partition(g,R,N):
                 if merged: #合并相应变量
                     del last_regions[j]# 这里的j一定比i小也比所有的large_region_id小
                     del boundaries[j]
+                    last_regions[i] = region
+                    boundaries[i] = [node for node in list(region) if len(region[node])<len(g[node])]
                     if len(region)==N:# 同上，不考虑极小概率的合并情况
                         large_region_id.append(i)
-                    else:
-                        last_regions[i] = region
-                        boundaries[i] = [node for node in list(region) if len(region[node])<len(g[node])]
-
+                
                 # 每次开始下一次循环前把没朋友的region送进diction，为了确保merge的过程，需要在merge之后操作，因此把break单独放在后面
                 large_region_id = sorted(large_region_id,reverse=True)# 得从后往前删，其实直接翻转好像就行，为了可读性还是这样吧
                 for k in large_region_id: 
-                    local_dict[R].append(last_regions[k])
+                    local_dict[L].append(last_regions[k])
                     del last_regions[k]
                     del boundaries[k]
 
@@ -356,7 +356,7 @@ def get_local_partition(g,R,N):
                     break
             
             # 不考虑三区合并的问题了，最小的情况也有N=7,完全是浪费时间
-            local_dict[R] += last_regions # 直接加上就完事
+            local_dict[L] += last_regions # 直接加上就完事
 
             # # 邻居之间尝试合并完成，搭建剩余的不太大的region构成的graph用来搜索可多区块合并的结构
             # '''
@@ -382,8 +382,8 @@ def get_local_partition(g,R,N):
             #             connections[i,j] = connection
             #             region_graph.add_edge(i,j)
 
-        else:# R-1的partition已经覆盖了这个Region
-            local_dict[R] = local_dict[R-1] + regions_in_g_left
+        else:# L-1的partition已经覆盖了这个Region
+            local_dict[L] = local_dict[L-1] + regions_in_g_left
 
     return local_dict
 
@@ -633,26 +633,56 @@ def safe_inv(v):
     return inv
    
 if __name__ == '__main__':
-    G,gname= graph('rrg',[200,3,1])
+    # G,gname= graph('rrg',[200,3,1])
     # G,gname= graph('USA')
-    # G,gname = graph('random_tree',[150,35])
-    # n = 12
-    # k = 3
-    # seed_clique = 48
-    # G = add_clique(G,n,k,seed_clique)
-    # G = cut(G)
-    # print(len(G))
+    G,gname= graph('club')
+
+    G,gname = graph('random_tree',[150,29])
+    n = 15
+    k = 3
+    seed_clique = 14
+    G = add_clique(G,n,k,seed_clique)
+    
     # G,gname= graph('cross_square',[5])
 
-    R = 6
-    N = 6
-    t = time.time()
-    region_dict = get_partition(G,R,N)
-    print(time.time()-t)
+    # G,gname= graph('rrg',[500,3,1])
+    # t_max = 300
+    # n = 30
+    # k = 3
+    # seed_clique = 1
+    # G = add_clique(G,n,k,seed_clique)
 
-    for r in range(3,R+1):
-        print('R='+str(r))
-        for region in region_dict[r]:
+    # for seed_1 in range(100):
+    #     for seed_2 in range(100):
+    #         G,gname = graph('random_tree',[150,seed_1])
+    #         t_max = 500
+    #         n = 15
+    #         k = 3
+    #         seed_clique = seed_2
+    #         G = add_clique(G,n,k,seed_clique)
+    #         gname = str(n) + '*' + str(k) + 'cliqued_' + gname
+    #         # t = time.time()
+    #         region_dict = get_partition(G,9,9)
+    #         N = []
+    #         S = []
+    #         for l in range(3,10):
+    #             size = 0
+    #             for region in region_dict[l]:
+    #                 size += len(region)
+    #             N.append(len(region_dict[l]))
+    #             S.append(size)
+    #         if len(set(N))>5 and len(set(S))>5:
+    #             print(seed_1,seed_2)
+
+    L = 9
+    N = 9
+    # t = time.time()
+    region_dict = get_partition(G,L,N)
+    # print(time.time()-t)
+
+    for l in range(3,L+1):
+        print('L='+str(l))
+        for region in region_dict[l]:
             print(list(region))
         print()
     

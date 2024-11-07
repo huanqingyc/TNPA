@@ -449,7 +449,7 @@ if __name__ == '__main__':
     # s.save_data(4)
 
     # region_dict = get_Regions_diction(G,3,7)
-    # label = '_R3N7'
+    # label = '_L3N7'
     # s = TNPA(G,gname,'SIR',[0.1,0.05],0.1,[0],region_dict[3],label)
     # s.evolution(200)
     # s.save_data(6)
